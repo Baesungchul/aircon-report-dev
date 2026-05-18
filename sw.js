@@ -1,5 +1,5 @@
-// 서비스워커 v141 - 1.187: 기간 필터 date 우선 + 안전마진 + 순서편집 뒤로가기 수정
-const CACHE = 'ac1004-v141';
+// 서비스워커 v143 - 1.189: 사진 확대 단순화 + opacity 초기화 + 모달 닫은 직후 종료확인 차단
+const CACHE = 'ac1004-v143';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
