@@ -118,30 +118,9 @@ function bindAll() {
     btn.textContent = isOpen ? '더보기 ▼' : '접기 ▲';
   });
 
-  // ★ 뒤로가기(Android 물리버튼) 통합 처리
-  window.addEventListener('popstate', () => {
-    // 1) 순서편집 전체화면 (pushState로 history에 들어가 있음)
-    //    이미 popstate 발생 = 이미 뒤로 간 상태 → 그냥 UI만 닫고 끝
-    const rfv = document.getElementById('reorderFullView');
-    if (rfv && rfv.classList.contains('open')) {
-      rfv.classList.remove('open');
-      return;  // ★ history 건드리지 않음 (reorderModal 안 닫히게)
-    }
-    // 2) 사진 크게보기
-    const imgM = document.getElementById('imgModal');
-    if (imgM && imgM.classList.contains('open')) {
-      imgM.classList.remove('open');
-      return;
-    }
-    // 3) 열린 모달 닫기 (작업기록, 불러오기 등)
-    const openModal = document.querySelector(
-      '.sl-modal.open, #customerModal.open, #reorderModal.open, #settingsModal.open, #pvModal.open'
-    );
-    if (openModal) {
-      openModal.classList.remove('open');
-      return;
-    }
-  });
+  // ★ 뒤로가기 통합 처리는 state.js의 setupBackButtonHandler에서 함
+  // (여기 중복 핸들러 제거 - 두 곳에서 처리하면 동시 실행으로 모달 두 개 닫힘)
+
   document.getElementById('btnSave').addEventListener('click', handleSaveClick);
   document.getElementById('btnNew')?.addEventListener('click', newWork);
   document.getElementById('btnLoad')?.addEventListener('click', openLoadList);
@@ -223,7 +202,10 @@ function bindAll() {
   // 이미지 모달
   function closeImgModal() {
     const m = document.getElementById('imgModal');
+    if (!m.classList.contains('open')) return;
     m.classList.remove('open');
+    // ★ 방금 닫았다고 표시 → 다음 popstate는 종료 확인 안 함
+    if (typeof window._markModalJustClosed === 'function') window._markModalJustClosed();
     if (history.state?.imgModal) history.back();
   }
   document.getElementById('imgX').addEventListener('click', closeImgModal);
@@ -288,24 +270,37 @@ function bindAll() {
       }
       return;
     }
-    // 사진 크게 보기 - 원본만 표시 (썸네일 잠깐 보이는 것 방지)
+    // 사진 크게 보기
     if (t.tagName==='IMG' && t.closest('.th-wrap')) {
       const pid = t.dataset.photoId;
       const p = pid ? findPhotoById(pid) : null;
 
-      if (p && p._originalDataUrl) {
-        showImg(p._originalDataUrl);
-        return;
+      // ★ opacity 0으로 인한 빈 화면 방지 - 매번 명시적으로 1
+      const modalImg = document.getElementById('modalImg');
+      if (modalImg) {
+        modalImg.style.opacity = '1';
+        modalImg.style.transition = '';
       }
 
-      const canLoad = p && (p.fileHandle || (p._workDir && p.fileName));
-      if (canLoad) {
+      // 우선순위:
+      // 1. 원본 캐시 (_originalDataUrl)
+      // 2. 화면에 보이는 dataUrl (썸네일이라도)
+      // 3. img 태그의 src (최후)
+      let initialSrc = '';
+      if (p?._originalDataUrl) initialSrc = p._originalDataUrl;
+      else if (p?.dataUrl) initialSrc = p.dataUrl;
+      else if (t.src) initialSrc = t.src;
+
+      if (initialSrc && !initialSrc.startsWith('data:image/svg+xml')) {
+        // placeholder가 아닌 진짜 이미지 → 즉시 표시
+        showImg(initialSrc);
+      } else {
+        // placeholder만 있음 → 빈 모달 열고 원본 로드 대기
         showImg('');
-        const modalImg = document.getElementById('modalImg');
-        if (modalImg) {
-          modalImg.style.opacity = '0';
-          modalImg.style.transition = 'opacity .15s';
-        }
+      }
+
+      // 백그라운드에서 원본 로드 (캐시 + 더 좋은 화질)
+      if (p && !p._originalDataUrl && (p.fileHandle || (p._workDir && p.fileName))) {
         (async () => {
           try {
             let fh = p.fileHandle;
@@ -316,16 +311,14 @@ function bindAll() {
             const file = await fh.getFile();
             const dataUrl = await blobToDataURL(file);
             p._originalDataUrl = dataUrl;
-            if (modalImg) {
-              modalImg.src = dataUrl;
-              modalImg.style.opacity = '1';
+            // 모달이 아직 열려있으면 원본으로 교체
+            const m = document.getElementById('modalImg');
+            const mod = document.getElementById('imgModal');
+            if (m && mod && mod.classList.contains('open')) {
+              m.src = dataUrl;
             }
-          } catch(e) {
-            if (modalImg) modalImg.style.opacity = '1';
-          }
+          } catch(e) { console.warn('원본 로드 실패:', e.message); }
         })();
-      } else {
-        showImg(t.src);
       }
       return;
     }

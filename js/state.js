@@ -308,8 +308,23 @@ function setupBackButtonHandler() {
   // 메인 상태 1개만 유지
   history.pushState({ page: 'main' }, '', location.href);
 
+  // ★ 방금 닫힌 모달 추적 (history.back 후 popstate 발생 시 메인으로 처리 안 하기)
+  let _justClosedTimer = 0;
+  window._markModalJustClosed = function() {
+    _justClosedTimer = Date.now();
+  };
+
   window.addEventListener('popstate', (e) => {
-    // 1) 열린 모달 찾기
+    // ★ 1) 순서편집 전체화면 - 모달보다 먼저 처리 (스택의 가장 위)
+    const rfv = document.getElementById('reorderFullView');
+    if (rfv && rfv.classList.contains('open')) {
+      rfv.classList.remove('open');
+      _justClosedTimer = Date.now();
+      history.pushState({ page: 'main' }, '', location.href);
+      return;
+    }
+
+    // 2) 열린 모달 찾기
     const modalIds = ['saveDlg', 'slModal', 'coModal', 'settingsModal', 'imgModal', 'pvModal', 'reorderModal', 'themePickerModal', 'customerModal', 'onboardingModal'];
     let openModal = null;
     for (const id of modalIds) {
@@ -321,9 +336,23 @@ function setupBackButtonHandler() {
     }
 
     if (openModal) {
-      // 모달 닫기 (메인으로 돌아오기만)
+      // ★ reorderModal이면 변경사항 확인
+      if (openModal.id === 'reorderModal' && typeof hasReorderChanges === 'function' && hasReorderChanges()) {
+        const ok = confirm('🔄 변경된 순서가 있어요.\n\n저장하지 않고 닫을까요?\n(취소하면 순서편집으로 돌아갑니다)');
+        if (!ok) {
+          history.pushState({ page: 'main' }, '', location.href);
+          return;
+        }
+      }
       openModal.classList.remove('open');
-      // 메인 상태 다시 pushState - 다음 뒤로가기를 위함
+      _justClosedTimer = Date.now();
+      history.pushState({ page: 'main' }, '', location.href);
+      return;
+    }
+
+    // ★ 방금 모달을 닫은 후의 popstate (예: closeImgModal의 history.back)
+    // → 종료 확인 띄우지 않음
+    if (Date.now() - _justClosedTimer < 500) {
       history.pushState({ page: 'main' }, '', location.href);
       return;
     }

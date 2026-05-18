@@ -2124,14 +2124,29 @@ function closeReorderFullView() {
   const fv = document.getElementById('reorderFullView');
   if (!fv || !fv.classList.contains('open')) return;
   fv.classList.remove('open');
-  // ★ history.back 호출하면 popstate가 또 발생해서 reorderModal까지 닫혀버림
-  // popstate에서 호출된 경우엔 이미 뒤로 갔으니 호출 불필요
-  // 클릭으로 닫은 경우만 history 정리
-  if (history.state?.reorderFullView) {
-    // 사진 클릭으로 닫는 경우 - state 있으면 한 단계 뒤로
-    history.back();
-  }
+  // 사용자가 사진 클릭으로 닫는 경우 - 한 단계 뒤로 (popstate 발생 → state.js에서 처리됨)
+  // 단, state.js가 reorderFullView 닫혀있는 걸 보고 다음 우선순위로 가버릴 수 있으므로
+  // 여기서 미리 닫은 후 history.back은 다음 동작을 위함이 아니라 스택 정리용
+  try { history.back(); } catch(e) {}
 }
+
+// ★ 순서 변경사항 있는지 확인
+function hasReorderChanges() {
+  if (!_reorderState) return false;
+  const u = units.find(x => String(x.id) === String(_reorderState.unitId));
+  if (!u) return false;
+
+  // before/after 순서 비교
+  const compare = (current, original) => {
+    if (current.length !== original.length) return true;
+    for (let i = 0; i < current.length; i++) {
+      if (current[i].id !== original[i].id) return true;
+    }
+    return false;
+  };
+  return compare(_reorderState.before, u.before) || compare(_reorderState.after, u.after);
+}
+window.hasReorderChanges = hasReorderChanges;
 
 function moveReorderItem(side, idx, direction) {
   if (!_reorderState) return;
@@ -2161,7 +2176,7 @@ function saveReorder() {
   u.before.forEach(p => { p.savedToFolder = false; });
   u.after.forEach(p => { p.savedToFolder = false; });
 
-  closeReorderModal();
+  closeReorderModal(true);  // 저장 후 닫으니 confirm 생략
   renderAll();
   updateStats();
   showToast('✓ 순서 변경 완료', 'ok');
@@ -2170,7 +2185,12 @@ function saveReorder() {
   if (typeof sessionAutoSaveNow === 'function') sessionAutoSaveNow();
 }
 
-function closeReorderModal() {
+function closeReorderModal(skipConfirm) {
+  // ★ 변경사항 있으면 확인
+  if (!skipConfirm && typeof hasReorderChanges === 'function' && hasReorderChanges()) {
+    const ok = confirm('🔄 변경된 순서가 있어요.\n\n저장하지 않고 닫을까요?\n(취소하면 순서편집으로 돌아갑니다)');
+    if (!ok) return;
+  }
   // ★ 드래그 리스너 정리 (메모리 누수 방지)
   if (_dragCleanup) { _dragCleanup(); _dragCleanup = null; }
   _reorderState = null;
