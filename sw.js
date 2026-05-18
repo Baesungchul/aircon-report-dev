@@ -1,5 +1,5 @@
-// 서비스워커 v136 - 1.182: 인덱스 차분 동기화 (기존 활용 + 변경분만 갱신)
-const CACHE = 'ac1004-v136';
+// 서비스워커 v137 - 1.183: 진짜 병목 발견! customer_storage_v2도 인덱스 사용 (폴더 스캔 0회)
+const CACHE = 'ac1004-v137';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
