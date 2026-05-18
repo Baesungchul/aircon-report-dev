@@ -1,5 +1,5 @@
-// 서비스워커 v138 - 1.184: 저장 후 V2 캐시 무효화 + 작업기록 모달 새로고침 버튼
-const CACHE = 'ac1004-v138';
+// 서비스워커 v140 - 1.186: 새로고침 = 전체 재빌드 + 저장 시 phone 진단 토스트
+const CACHE = 'ac1004-v140';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
