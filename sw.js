@@ -1,5 +1,5 @@
-// 서비스워커 v133 - 1.179: 작업 인덱스 파일 시스템 (_works_index.json)
-const CACHE = 'ac1004-v133';
+// 서비스워커 v134 - 1.180: 삭제 후 작업기록 캐시 무효화 (목록 즉시 반영)
+const CACHE = 'ac1004-v134';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
