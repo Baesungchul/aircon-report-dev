@@ -290,3 +290,107 @@ window.rebuildWorkIndex = async function() {
     if (typeof setAppBusy === 'function') setAppBusy(false);
   }
 };
+
+// ★ 앱 시작 시 - 인덱스 차분 동기화 (있으면 변경분만, 없으면 전체)
+let _autoBuildAttempted = false;
+async function autoBuildIndexIfMissing() {
+  if (_autoBuildAttempted) return;  // 한 번만
+  _autoBuildAttempted = true;
+
+  if (!photoFolderHandle) return;
+  try {
+    // 권한 체크
+    const perm = await photoFolderHandle.queryPermission({ mode: 'read' });
+    if (perm !== 'granted') return;
+
+    // ★ 차분 동기화 (인덱스 있으면 변경분만, 없으면 전체)
+    console.log('[인덱스] 백그라운드 동기화 시작');
+    await syncIndexWithFolders((cur, total) => {
+      if (cur === total) console.log(`[인덱스] 동기화 완료: ${total}건 처리`);
+    });
+  } catch(e) {
+    console.warn('[인덱스] 동기화 실패:', e.message);
+  }
+}
+window.autoBuildIndexIfMissing = autoBuildIndexIfMissing;
+
+// ★ 차분 동기화 - 인덱스 활용 + 변경된 폴더만 처리
+async function syncIndexWithFolders(onProgress) {
+  if (!photoFolderHandle) return null;
+
+  // 1단계: 인덱스 로드
+  let index = await loadWorkIndex();
+  if (!index) {
+    // 인덱스 자체가 없으면 전체 재빌드
+    console.log('[인덱스 동기화] 인덱스 없음 → 전체 재빌드');
+    return await rebuildIndexFromFolders(onProgress);
+  }
+
+  // 2단계: 실제 폴더 목록만 빠르게 수집 (파일 안 읽음)
+  const folderNames = new Set();
+  try {
+    for await (const entry of photoFolderHandle.values()) {
+      if (entry.kind !== 'directory') continue;
+      if (!/^\d{4}-\d{2}-\d{2}/.test(entry.name)) continue;
+      folderNames.add(entry.name);
+    }
+  } catch(e) {
+    console.warn('[인덱스 동기화] 폴더 목록 실패:', e.message);
+    return index;  // 기존 인덱스 그대로 사용
+  }
+
+  // 3단계: 인덱스 항목과 비교
+  const indexedNames = new Set(index.works.map(w => w.folderName));
+
+  // 삭제된 폴더 (인덱스에는 있는데 실제로 없음)
+  const removed = [...indexedNames].filter(n => !folderNames.has(n));
+  // 추가된 폴더 (실제로는 있는데 인덱스에 없음)
+  const added = [...folderNames].filter(n => !indexedNames.has(n));
+
+  if (removed.length === 0 && added.length === 0) {
+    console.log(`[인덱스 동기화] 변경 없음 (인덱스 ${index.works.length}건)`);
+    return index;
+  }
+
+  console.log(`[인덱스 동기화] 변경 감지 - 삭제 ${removed.length}건, 추가 ${added.length}건`);
+
+  // 4단계: 삭제된 항목 제거
+  if (removed.length > 0) {
+    const removedSet = new Set(removed);
+    index.works = index.works.filter(w => !removedSet.has(w.folderName));
+  }
+
+  // 5단계: 추가된 폴더만 _session.json 읽기 (10개씩 병렬)
+  if (added.length > 0) {
+    const BATCH = 10;
+    let scanned = 0;
+    for (let i = 0; i < added.length; i += BATCH) {
+      const batch = added.slice(i, i + BATCH);
+      const results = await Promise.all(batch.map(async (name) => {
+        try {
+          const dir = await photoFolderHandle.getDirectoryHandle(name);
+          const sf = await dir.getFileHandle('_session.json');
+          const f = await sf.getFile();
+          const data = JSON.parse(await f.text());
+          return { name, data };
+        } catch(e) { return null; }
+      }));
+
+      for (const r of results) {
+        scanned++;
+        if (!r) continue;
+        const entry = sessionToIndexEntry(r.name, r.data);
+        if (entry) index.works.push(entry);
+      }
+      if (onProgress) onProgress(scanned, added.length);
+    }
+  }
+
+  // 6단계: 인덱스 저장
+  index.updatedAt = new Date().toISOString();
+  await saveWorkIndex(index);
+  console.log(`[인덱스 동기화] 완료 - 최종 ${index.works.length}건`);
+
+  return index;
+}
+window.syncIndexWithFolders = syncIndexWithFolders;

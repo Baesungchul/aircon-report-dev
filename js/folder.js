@@ -122,6 +122,8 @@ async function initPhotoFolder() {
         if (typeof scheduleBackgroundBuild === 'function') {
           scheduleBackgroundBuild();
         }
+        // ★ 인덱스 없으면 자동 생성
+        autoBuildIndexIfMissing();
       }, 3000);
       // 첫 실행이면 마이그레이션 (조용히)
       if (typeof maybeRunMigration === 'function') {
@@ -141,6 +143,8 @@ async function initPhotoFolder() {
           if (typeof scheduleBackgroundBuild === 'function') {
             scheduleBackgroundBuild();
           }
+          // ★ 인덱스 자동 생성
+          autoBuildIndexIfMissing();
         }, 1000);
         if (typeof maybeRunMigration === 'function') {
           setTimeout(() => maybeRunMigration().catch(()=>{}), 2000);
@@ -165,6 +169,8 @@ async function initPhotoFolder() {
           if (typeof scheduleBackgroundBuild === 'function') {
             scheduleBackgroundBuild();
           }
+          // ★ 인덱스 없으면 백그라운드 자동 생성
+          autoBuildIndexIfMissing();
           return;
         }
         // 사용자 제스처 컨텍스트 안에서 권한 요청
@@ -176,13 +182,13 @@ async function initPhotoFolder() {
           if (typeof scheduleBackgroundBuild === 'function') {
             scheduleBackgroundBuild();
           }
+          // ★ 인덱스 없으면 백그라운드 자동 생성
+          autoBuildIndexIfMissing();
           if (typeof maybeRunMigration === 'function') {
             setTimeout(() => maybeRunMigration().catch(()=>{}), 500);
           }
         }
-      } catch(e) {
-        // 사용자가 거부했거나 다른 이유 - 무시
-      }
+      } catch(e) { /* 무시 */ }
     };
 
     // 첫 클릭/터치 한 번만 시도하고 리스너 제거
