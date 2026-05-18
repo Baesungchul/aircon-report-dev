@@ -712,6 +712,9 @@ async function renderCustomerList() {
         clearTimeout(safetyTimeout);
         hideOverlay();
 
+        // ★ 캐시 무효화 후 목록 갱신
+        if (typeof invalidateCustomersCache === 'function') invalidateCustomersCache();
+        if (typeof invalidateRecordsCache === 'function') invalidateRecordsCache();
         await renderCustomerList();
 
         if (folderFailed === 0) {
@@ -811,6 +814,10 @@ async function renderCustomerList() {
           }
           // ★ 인덱스에서도 제거
           if (typeof scheduleIndexDelete === 'function') scheduleIndexDelete(folder);
+          // ★ 작업기록 캐시 무효화 (목록 즉시 갱신용)
+          if (typeof invalidateRecordsCache === 'function') {
+            invalidateRecordsCache();
+          }
           if (typeof flushCustomersXlsx === 'function') {
             await flushCustomersXlsx();
           }
