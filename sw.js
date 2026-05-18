@@ -1,5 +1,5 @@
-// 서비스워커 v137 - 1.183: 진짜 병목 발견! customer_storage_v2도 인덱스 사용 (폴더 스캔 0회)
-const CACHE = 'ac1004-v137';
+// 서비스워커 v138 - 1.184: 저장 후 V2 캐시 무효화 + 작업기록 모달 새로고침 버튼
+const CACHE = 'ac1004-v138';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
