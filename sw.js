@@ -1,5 +1,5 @@
-// 서비스워커 v143 - 1.189: 사진 확대 단순화 + opacity 초기화 + 모달 닫은 직후 종료확인 차단
-const CACHE = 'ac1004-v143';
+// 서비스워커 v144 - 1.190: 순서편집 사진확대도 닫기 버튼(✕)만으로 닫기 (메인과 통일)
+const CACHE = 'ac1004-v144';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
