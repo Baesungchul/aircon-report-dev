@@ -434,6 +434,10 @@ async function saveToFolder(opts) {
     if (typeof invalidateCustomersCache === 'function') {
       invalidateCustomersCache();
     }
+    // ★ V2 캐시도 무효화 (60초 TTL 무시하고 강제 재계산)
+    if (typeof invalidateCustomersV2 === 'function') {
+      invalidateCustomersV2();
+    }
     // ★ 작업기록 캐시 무효화 + 백그라운드 재빌드
     if (typeof invalidateRecordsCache === 'function') {
       invalidateRecordsCache();

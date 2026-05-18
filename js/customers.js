@@ -1630,6 +1630,38 @@ function bindCustomerEvents() {
   if (closeBtn) closeBtn.addEventListener('click', closeCustomerModal);
   if (closeFoot) closeFoot.addEventListener('click', closeCustomerModal);
   if (xlsxBtn) xlsxBtn.addEventListener('click', openCustomersXlsxFile);
+
+  // ★ 새로고침 버튼 - 모든 캐시 비우고 인덱스 강제 재동기화
+  const refreshBtn = document.getElementById('customerRefresh');
+  if (refreshBtn) refreshBtn.addEventListener('click', async () => {
+    if (_appBusy) return;
+    refreshBtn.disabled = true;
+    refreshBtn.style.opacity = '0.5';
+    try {
+      // 1. 모든 메모리 캐시 무효화
+      if (typeof invalidateRecordsCache === 'function') invalidateRecordsCache();
+      if (typeof invalidateCustomersV2 === 'function') invalidateCustomersV2();
+      if (typeof invalidateCustomersCache === 'function') invalidateCustomersCache();
+      if (typeof invalidateWorkIndex === 'function') invalidateWorkIndex();
+
+      // 2. 인덱스 차분 동기화 (실제 폴더와 비교, 변경분만 처리)
+      if (typeof syncIndexWithFolders === 'function') {
+        setAppBusy(true, '🔄 작업기록 동기화 중...');
+        await syncIndexWithFolders();
+      }
+
+      // 3. 목록 다시 렌더
+      await renderCustomerList();
+      showToast('✓ 작업기록 새로고침 완료', 'ok');
+    } catch(e) {
+      console.error('새로고침 실패:', e);
+      showToast('새로고침 실패: ' + e.message, 'err');
+    } finally {
+      setAppBusy(false);
+      refreshBtn.disabled = false;
+      refreshBtn.style.opacity = '1';
+    }
+  });
 }
 
 if (document.readyState === 'loading') {
