@@ -1,5 +1,5 @@
-// 서비스워커 v140 - 1.186: 새로고침 = 전체 재빌드 + 저장 시 phone 진단 토스트
-const CACHE = 'ac1004-v140';
+// 서비스워커 v141 - 1.187: 기간 필터 date 우선 + 안전마진 + 순서편집 뒤로가기 수정
+const CACHE = 'ac1004-v141';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
