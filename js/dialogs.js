@@ -2111,8 +2111,16 @@ function openReorderFullView(src) {
     fv = document.createElement('div');
     fv.id = 'reorderFullView';
     fv.className = 'reorder-fullview';
-    fv.innerHTML = `<img id="reorderFullImg" src="" alt="전체화면">`;
-    fv.addEventListener('click', () => closeReorderFullView());
+    // ★ 닫기 버튼만 추가 - 화면 영역 클릭으로는 닫히지 않음
+    fv.innerHTML = `
+      <button id="reorderFullClose" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,.65);color:#fff;border:none;width:42px;height:42px;border-radius:50%;font-size:22px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center;">✕</button>
+      <img id="reorderFullImg" src="" alt="전체화면">
+    `;
+    // ★ 닫기 버튼만 이벤트 - 이미지 클릭으로는 닫히지 않음
+    fv.querySelector('#reorderFullClose').addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeReorderFullView();
+    });
     document.body.appendChild(fv);
   }
   document.getElementById('reorderFullImg').src = src;
@@ -2124,9 +2132,8 @@ function closeReorderFullView() {
   const fv = document.getElementById('reorderFullView');
   if (!fv || !fv.classList.contains('open')) return;
   fv.classList.remove('open');
-  // 사용자가 사진 클릭으로 닫는 경우 - 한 단계 뒤로 (popstate 발생 → state.js에서 처리됨)
-  // 단, state.js가 reorderFullView 닫혀있는 걸 보고 다음 우선순위로 가버릴 수 있으므로
-  // 여기서 미리 닫은 후 history.back은 다음 동작을 위함이 아니라 스택 정리용
+  // ★ 방금 닫음 표시 → state.js의 popstate가 종료 확인 안 띄움
+  if (typeof window._markModalJustClosed === 'function') window._markModalJustClosed();
   try { history.back(); } catch(e) {}
 }
 
