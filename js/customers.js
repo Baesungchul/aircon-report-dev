@@ -1631,10 +1631,12 @@ function bindCustomerEvents() {
   if (closeFoot) closeFoot.addEventListener('click', closeCustomerModal);
   if (xlsxBtn) xlsxBtn.addEventListener('click', openCustomersXlsxFile);
 
-  // ★ 새로고침 버튼 - 모든 캐시 비우고 인덱스 강제 재동기화
+  // ★ 새로고침 버튼 - 모든 캐시 비우고 인덱스 전체 재빌드
   const refreshBtn = document.getElementById('customerRefresh');
   if (refreshBtn) refreshBtn.addEventListener('click', async () => {
     if (_appBusy) return;
+    if (!confirm('🔄 작업기록 새로고침\n\n폴더 전체를 다시 읽어서 목록을 갱신합니다.\n계속할까요?')) return;
+
     refreshBtn.disabled = true;
     refreshBtn.style.opacity = '0.5';
     try {
@@ -1644,10 +1646,14 @@ function bindCustomerEvents() {
       if (typeof invalidateCustomersCache === 'function') invalidateCustomersCache();
       if (typeof invalidateWorkIndex === 'function') invalidateWorkIndex();
 
-      // 2. 인덱스 차분 동기화 (실제 폴더와 비교, 변경분만 처리)
-      if (typeof syncIndexWithFolders === 'function') {
-        setAppBusy(true, '🔄 작업기록 동기화 중...');
-        await syncIndexWithFolders();
+      // 2. ★ 인덱스 전체 재빌드 (차분 동기화 아님 - 모든 _session.json 다시 읽음)
+      if (typeof rebuildIndexFromFolders === 'function') {
+        setAppBusy(true, '🔄 작업기록 전체 재빌드 중...');
+        await rebuildIndexFromFolders((cur, total) => {
+          if (typeof setAppBusy === 'function') {
+            setAppBusy(true, `🔄 작업기록 재빌드 중... ${cur}/${total}`);
+          }
+        });
       }
 
       // 3. 목록 다시 렌더

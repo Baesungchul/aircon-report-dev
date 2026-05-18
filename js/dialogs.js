@@ -446,7 +446,26 @@ async function saveToFolder(opts) {
     if (typeof scheduleIndexUpdate === 'function' && dateFolderName) {
       try {
         const indexEntry = sessionToIndexEntry(dateFolderName, sessionData);
-        if (indexEntry) scheduleIndexUpdate(indexEntry);
+        if (indexEntry) {
+          // ★ 진단: phone 있는 호수 개수 확인
+          const phoneCount = indexEntry.units.filter(u => u.customer?.phone).length;
+          const totalUnits = indexEntry.units.length;
+          console.log('[인덱스 갱신 진단]', {
+            folder: dateFolderName,
+            workId: indexEntry.workId,
+            apt: indexEntry.apt,
+            phoneCount: `${phoneCount}/${totalUnits}`,
+            units: indexEntry.units.map(u => ({
+              name: u.name,
+              phone: u.customer?.phone || '(없음)'
+            }))
+          });
+          // ★ 진단 토스트 (사용자에게도 보여줌 - 임시)
+          if (!isAutoSave && totalUnits > 0) {
+            showToast(`📊 인덱스: ${phoneCount}/${totalUnits} 호수에 전화번호 있음`, 'ok');
+          }
+          scheduleIndexUpdate(indexEntry);
+        }
       } catch(e) { console.warn('[인덱스] 갱신 실패:', e.message); }
     }
   } else {
