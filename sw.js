@@ -1,5 +1,5 @@
-// 서비스워커 v134 - 1.180: 삭제 후 작업기록 캐시 무효화 (목록 즉시 반영)
-const CACHE = 'ac1004-v134';
+// 서비스워커 v136 - 1.182: 인덱스 차분 동기화 (기존 활용 + 변경분만 갱신)
+const CACHE = 'ac1004-v136';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
