@@ -126,6 +126,9 @@ function getDefaultDateFrom() {
 // 반환: [{ type: 'customer'|'work', sortDate, data }, ...]
 // ════════════════════════════════════════
 async function loadCombinedRecords() {
+  const T0 = Date.now();
+  console.log('[⏱️] loadCombinedRecords 시작');
+
   const items = [];
   const customerWorkIds = new Set();
   const customerAptDateKeys = new Set();
@@ -145,8 +148,11 @@ async function loadCombinedRecords() {
   }
 
   // 1. 고객 데이터 로드 - workId별로 그룹화
+  const T1 = Date.now();
+  console.log(`[⏱️] 권한 체크: ${T1-T0}ms`);
   try {
     const customers = await customerListAll();
+    console.log(`[⏱️] customerListAll: ${Date.now()-T1}ms (${customers.length}명)`);
     customers.forEach(c => {
       if (!c.visits || c.visits.length === 0) {
         items.push({
@@ -215,13 +221,14 @@ async function loadCombinedRecords() {
       }
 
       // ★★ NEW: 인덱스 파일 시도 (있으면 폴더 스캔 0회!)
+      const T2 = Date.now();
       let useIndex = false;
       let indexData = null;
       if (typeof loadWorkIndex === 'function') {
         indexData = await loadWorkIndex();
+        console.log(`[⏱️] loadWorkIndex: ${Date.now()-T2}ms (${indexData ? indexData.works.length + '건' : '없음'})`);
         if (indexData && Array.isArray(indexData.works)) {
           useIndex = true;
-          console.log(`[작업기록] 인덱스 사용: ${indexData.works.length}건 (폴더 스캔 0회)`);
         }
       }
 
@@ -353,6 +360,7 @@ async function loadCombinedRecords() {
 
   items.sort((a, b) => (b.sortDate || '').localeCompare(a.sortDate || ''));
 
+  console.log(`[⏱️] loadCombinedRecords 완료: 총 ${Date.now()-T0}ms (${items.length}건)`);
   return items;
 }
 

@@ -120,12 +120,11 @@ async function rebuildCustomersFromSessions(opts = {}) {
     return [];
   }
 
-  // ★ 권한 체크 - 권한 없으면 캐시 안 만들고 빈 배열 반환 (다음 호출에 재시도)
+  // ★ 권한 체크
   try {
     const perm = await photoFolderHandle.queryPermission({ mode: 'read' });
     if (perm !== 'granted') {
       console.warn('[v2] 폴더 읽기 권한 없음 - 스캔 스킵');
-      // 캐시 안 저장 → 다음 호출 시 다시 시도
       return [];
     }
   } catch(e) {
@@ -135,154 +134,124 @@ async function rebuildCustomersFromSessions(opts = {}) {
 
   await loadCustomerMeta();
 
-  // 전화번호별 visits 수집
-  const customersByPhone = new Map();
-
-  try {
-    // 1단계: 모든 디렉토리 엔트리 수집 (빠름)
-    const dirs = [];
-    for await (const entry of photoFolderHandle.values()) {
-      if (entry.kind !== 'directory') continue;
-      if (!/^\d{4}-\d{2}-\d{2}/.test(entry.name)) continue;
-      dirs.push(entry);
-    }
-
-    // 2단계: _session.json 병렬 읽기 (한꺼번에)
-    const results = await Promise.all(dirs.map(async (entry) => {
-      try {
-        const sessionFile = await entry.getFileHandle('_session.json');
-        const file = await sessionFile.getFile();
-        const data = JSON.parse(await file.text());
-        return { entry, data };
-      } catch(e) {
-        return null;
+  // ★★ NEW: 작업 인덱스 우선 사용 (폴더 스캔 0회!)
+  let useIndex = false;
+  let indexData = null;
+  if (!opts.force && typeof loadWorkIndex === 'function') {
+    try {
+      indexData = await loadWorkIndex();
+      if (indexData && Array.isArray(indexData.works) && indexData.works.length > 0) {
+        useIndex = true;
       }
-    }));
-
-    // 3단계: 결과 처리 (메모리에서, 빠름)
-    for (const result of results) {
-      if (!result) continue;
-      const { entry, data } = result;
-
-      if (!data.units || data.units.length === 0) continue;
-
-      const apt = data.apt || '';
-      const date = data.date || entry.name.slice(0, 10);
-      const workId = data.workId || '';
-      const folderName = entry.name;
-      const workType = data.workType || 'household';
-
-      // ★ 공용시설 모드: 작업 단위로 1개의 customer 만들기
-      if (workType === 'facility' && data.facilityCustomer?.phone) {
-        const phone = data.facilityCustomer.phone.trim();
-        const phoneDigits = phone.replace(/[^\d]/g, '');
-        if (phoneDigits.length < 9) continue;
-
-        const norm = normalizePhone(phone);
-        const totalPhotos = data.units.reduce((s, u) =>
-          s + (u.beforeCount || 0) + (u.afterCount || 0), 0);
-
-        const visit = {
-          workId,
-          folderName,
-          date,
-          apt,
-          unit: `${data.units.length}개 영역`,  // 표시용
-          unitName: '',
-          unitNames: data.units.map(u => u.name),  // 영역 목록
-          photos: totalPhotos,
-          specials: data.units.reduce((s, u) => s + (u.specials || []).length, 0),
-          isFacility: true,
-          unitAddress: data.facilityCustomer.address || '',
-          unitMemo: data.facilityCustomer.memo || '',
-          contactName: data.facilityCustomer.contact || ''
-        };
-
-        if (!customersByPhone.has(norm)) {
-          customersByPhone.set(norm, {
-            phone: norm,
-            visits: []
-          });
-        }
-        customersByPhone.get(norm).visits.push(visit);
-        continue;  // 시설 모드는 호수별 customer 무시
-      }
-
-      // 가정용 모드: 호수별 customer
-      for (const u of data.units) {
-        const phone = (u.customer?.phone || '').trim();
-        if (!phone) continue;
-
-        const phoneDigits = phone.replace(/[^\d]/g, '');
-        if (phoneDigits.length < 9) continue;
-
-        const norm = normalizePhone(phone);
-        const photoCount = (u.beforeCount || 0) + (u.afterCount || 0);
-
-        const visit = {
-          workId,
-          folderName,
-          date,
-          apt,
-          unit: u.name || '',
-          unitName: u.name || '',
-          photos: photoCount,
-          specials: (u.specials || []).length,
-          unitAddress: u.customer?.address || '',
-          unitMemo: u.customer?.memo || ''
-        };
-
-        if (!customersByPhone.has(norm)) {
-          customersByPhone.set(norm, {
-            phone: norm,
-            visits: []
-          });
-        }
-        customersByPhone.get(norm).visits.push(visit);
-      }
-    }
-  } catch(e) {
-    console.warn('rebuild 폴더 스캔 실패:', e);
+    } catch(e) {}
   }
 
-  // 각 customer 완성 (메타 + visits 합치기)
+  const customersByPhone = new Map();
+
+  if (useIndex) {
+    // 인덱스에서 visits 추출 (폴더 스캔 0회!)
+    console.log(`[v2] 인덱스 사용: ${indexData.works.length}건 (폴더 스캔 0회)`);
+    for (const w of indexData.works) {
+      processWorkForCustomers(w, customersByPhone);
+    }
+  } else {
+    // 폴더 스캔 폴백
+    console.log('[v2] 인덱스 없음 - 폴더 스캔 폴백');
+    try {
+      const dirs = [];
+      for await (const entry of photoFolderHandle.values()) {
+        if (entry.kind !== 'directory') continue;
+        if (!/^\d{4}-\d{2}-\d{2}/.test(entry.name)) continue;
+        dirs.push(entry);
+      }
+
+      const results = await Promise.all(dirs.map(async (entry) => {
+        try {
+          const sessionFile = await entry.getFileHandle('_session.json');
+          const file = await sessionFile.getFile();
+          const data = JSON.parse(await file.text());
+          return { entry, data };
+        } catch(e) { return null; }
+      }));
+
+      for (const result of results) {
+        if (!result) continue;
+        const { entry, data } = result;
+        const workInfo = {
+          folderName: entry.name,
+          workId: data.workId || '',
+          apt: data.apt || '',
+          date: data.date || entry.name.slice(0, 10),
+          savedAt: data.savedAt || '',
+          workType: data.workType || 'household',
+          units: (data.units || []).map(u => ({
+            name: u.name,
+            customer: u.customer
+          }))
+        };
+        processWorkForCustomers(workInfo, customersByPhone);
+      }
+    } catch(e) {
+      console.warn('[v2] 폴더 스캔 실패:', e);
+    }
+  }
+
+  // 메타 정보 합치기
   const customers = [];
-  customersByPhone.forEach((c, phone) => {
-    // visits 정렬 (최신순)
-    c.visits.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-
-    // 메타 정보 합치기
-    const meta = _metaCache[phone] || {};
-
-    // 호수별 customer.address/memo가 있으면 fallback으로 사용
-    const fallbackAddr = c.visits.find(v => v.unitAddress)?.unitAddress || '';
-    const fallbackMemo = c.visits.find(v => v.unitMemo)?.unitMemo || '';
-
-    const lastVisit = c.visits[0]?.date || '';
-    const firstVisit = c.visits[c.visits.length - 1]?.date || '';
-
+  for (const [phone, info] of customersByPhone) {
+    const meta = _metaCache?.[phone] || {};
     customers.push({
       phone,
       name: meta.name || '',
-      address: meta.address !== undefined ? meta.address : fallbackAddr,
-      memo: meta.memo !== undefined ? meta.memo : fallbackMemo,
+      address: meta.address || '',
+      memo: meta.memo || '',
       email: meta.email || '',
-      visits: c.visits,
-      visitCount: c.visits.length,
-      firstVisit,
-      lastVisit,
-      createdAt: meta.createdAt || firstVisit,
-      updatedAt: meta.updatedAt || lastVisit
+      visits: info.visits,
+      visitCount: info.visits.length,
+      lastVisit: info.lastVisit
     });
-  });
-
+  }
   customers.sort((a, b) => (b.lastVisit || '').localeCompare(a.lastVisit || ''));
 
   _customersV2Cache = customers;
   _customersV2CacheTime = Date.now();
-
+  console.log(`[v2] 처리 완료: ${customers.length}명`);
   return customers;
 }
+
+// 작업 1건에서 고객 visits 추출 (헬퍼)
+function processWorkForCustomers(work, customersByPhone) {
+  if (!work || !work.units) return;
+  if (work.workType === 'facility') return;  // 시설 모드 스킵
+
+  work.units.forEach(u => {
+    const phone = normalizePhone(u.customer?.phone || '');
+    if (!phone) return;
+
+    if (!customersByPhone.has(phone)) {
+      customersByPhone.set(phone, { visits: [], lastVisit: '' });
+    }
+    const c = customersByPhone.get(phone);
+
+    const visit = {
+      workId: work.workId,
+      apt: work.apt,
+      unit: u.name,
+      unitName: u.name,
+      date: work.date,
+      savedAt: work.savedAt,
+      sourceFolderName: work.folderName,
+      memo: u.customer?.memo || '',
+      address: u.customer?.address || ''
+    };
+    c.visits.push(visit);
+
+    if (!c.lastVisit || (work.date || '') > c.lastVisit) {
+      c.lastVisit = work.date || '';
+    }
+  });
+}
+
 
 // ════════════════════════════════════════
 // V1 호환 API (기존 코드와 호환)
