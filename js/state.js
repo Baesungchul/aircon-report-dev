@@ -315,6 +315,14 @@ function setupBackButtonHandler() {
   };
 
   window.addEventListener('popstate', (e) => {
+    // ★ 0) 방금 모달을 닫은 직후의 popstate → 추가 처리 안 함
+    // (closeReorderFullView, closeImgModal 등의 history.back으로 발생)
+    if (Date.now() - _justClosedTimer < 500) {
+      _justClosedTimer = 0;  // 한 번만 사용
+      history.pushState({ page: 'main' }, '', location.href);
+      return;
+    }
+
     // ★ 1) 순서편집 전체화면 - 모달보다 먼저 처리 (스택의 가장 위)
     const rfv = document.getElementById('reorderFullView');
     if (rfv && rfv.classList.contains('open')) {
@@ -350,14 +358,7 @@ function setupBackButtonHandler() {
       return;
     }
 
-    // ★ 방금 모달을 닫은 후의 popstate (예: closeImgModal의 history.back)
-    // → 종료 확인 띄우지 않음
-    if (Date.now() - _justClosedTimer < 500) {
-      history.pushState({ page: 'main' }, '', location.href);
-      return;
-    }
-
-    // 2) 메인 화면에서 뒤로가기 = 종료 확인
+    // 3) 메인 화면에서 뒤로가기 = 종료 확인
     const confirmExit = confirm('앱을 종료하시겠습니까?\n\n작업 내용은 자동으로 저장되어 있어 다음에 다시 열 수 있습니다.');
 
     if (confirmExit) {
