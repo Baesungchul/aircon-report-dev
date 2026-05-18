@@ -120,11 +120,12 @@ function bindAll() {
 
   // ★ 뒤로가기(Android 물리버튼) 통합 처리
   window.addEventListener('popstate', () => {
-    // 1) 순서편집 전체화면
+    // 1) 순서편집 전체화면 (pushState로 history에 들어가 있음)
+    //    이미 popstate 발생 = 이미 뒤로 간 상태 → 그냥 UI만 닫고 끝
     const rfv = document.getElementById('reorderFullView');
     if (rfv && rfv.classList.contains('open')) {
       rfv.classList.remove('open');
-      return;
+      return;  // ★ history 건드리지 않음 (reorderModal 안 닫히게)
     }
     // 2) 사진 크게보기
     const imgM = document.getElementById('imgModal');

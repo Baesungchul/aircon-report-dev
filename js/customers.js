@@ -118,6 +118,13 @@ function getDefaultDateFrom() {
   return localDateStr(d);
 }
 
+// ★ filterTo - 오늘 + 1일 (시간대/시간 차이로 인한 누락 방지)
+function getDefaultDateTo() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);  // 내일까지 포함
+  return localDateStr(d);
+}
+
 // ════════════════════════════════════════
 // 통합 데이터 로딩
 //   - 고객 (customers DB)
@@ -214,7 +221,7 @@ async function loadCombinedRecords() {
       let filterTo = null;
       if (_customerUseDefault) {
         filterFrom = getDefaultDateFrom();
-        filterTo = localDateStr();
+        filterTo = getDefaultDateTo();  // 오늘 + 1일 (안전마진)
       } else {
         filterFrom = _customerDateFrom;
         filterTo = _customerDateTo;
@@ -236,13 +243,13 @@ async function loadCombinedRecords() {
         // 인덱스에서 바로 작업 카드 생성
         const seenAptDate = new Set();
         for (const w of indexData.works) {
-          // 기간 필터
-          const folderDate = (w.folderName || '').slice(0, 10);
-          if (filterFrom && folderDate < filterFrom) continue;
-          if (filterTo && folderDate > filterTo) continue;
+          // ★ 기간 필터 - date 필드 우선 (사용자 입력 날짜), 없으면 폴더명
+          const checkDate = w.date || (w.folderName || '').slice(0, 10);
+          if (filterFrom && checkDate < filterFrom) continue;
+          if (filterTo && checkDate > filterTo) continue;
 
           const apt = w.apt || '';
-          const date = w.date || folderDate;
+          const date = w.date || checkDate;
           const workId = w.workId || '';
 
           // 고객 카드 중복 제거

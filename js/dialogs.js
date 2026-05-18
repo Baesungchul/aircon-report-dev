@@ -2124,7 +2124,13 @@ function closeReorderFullView() {
   const fv = document.getElementById('reorderFullView');
   if (!fv || !fv.classList.contains('open')) return;
   fv.classList.remove('open');
-  if (history.state?.reorderFullView) history.back();
+  // ★ history.back 호출하면 popstate가 또 발생해서 reorderModal까지 닫혀버림
+  // popstate에서 호출된 경우엔 이미 뒤로 갔으니 호출 불필요
+  // 클릭으로 닫은 경우만 history 정리
+  if (history.state?.reorderFullView) {
+    // 사진 클릭으로 닫는 경우 - state 있으면 한 단계 뒤로
+    history.back();
+  }
 }
 
 function moveReorderItem(side, idx, direction) {
