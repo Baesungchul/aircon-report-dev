@@ -1,5 +1,5 @@
-// 서비스워커 v144 - 1.190: 순서편집 사진확대도 닫기 버튼(✕)만으로 닫기 (메인과 통일)
-const CACHE = 'ac1004-v144';
+// 서비스워커 v145 - 1.191: _justClosedTimer 체크 최우선 (✕ 버튼 클릭 시 메인 가는 문제 해결)
+const CACHE = 'ac1004-v145';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
