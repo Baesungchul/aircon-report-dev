@@ -6,7 +6,7 @@
 ═══════════════════════════════════════════════ */
 
 const INDEX_FILE_NAME = '_works_index.json';
-const INDEX_VERSION = 1;
+const INDEX_VERSION = 2;  // ★ v2: facilityCustomer 포함 (v1은 facility 작업 누락)
 
 let _indexCache = null;          // 메모리 캐시
 let _indexLoaded = false;
@@ -154,6 +154,7 @@ function sessionToIndexEntry(folderName, sessionData) {
               (u.specials || []).reduce((a, sp) => a + (sp.photoCount || 0), 0),
     0
   );
+  const workType = sessionData.workType || 'household';
   return {
     folderName,
     workId: sessionData.workId || '',
@@ -161,7 +162,14 @@ function sessionToIndexEntry(folderName, sessionData) {
     date: sessionData.date || folderName.slice(0, 10),
     savedAt: sessionData.savedAt || '',
     worker: sessionData.worker || '',
-    workType: sessionData.workType || 'household',
+    workType,
+    // ★ 공용시설은 facilityCustomer에 전화번호가 있음
+    facilityCustomer: workType === 'facility' && sessionData.facilityCustomer ? {
+      phone: sessionData.facilityCustomer.phone || '',
+      contact: sessionData.facilityCustomer.contact || '',
+      address: sessionData.facilityCustomer.address || '',
+      memo: sessionData.facilityCustomer.memo || ''
+    } : null,
     totalUnits: sessionData.units.length,
     totalPhotos,
     units: sessionData.units.map(u => ({
@@ -323,6 +331,12 @@ async function syncIndexWithFolders(onProgress) {
   if (!index) {
     // 인덱스 자체가 없으면 전체 재빌드
     console.log('[인덱스 동기화] 인덱스 없음 → 전체 재빌드');
+    return await rebuildIndexFromFolders(onProgress);
+  }
+
+  // ★ 인덱스 버전이 낮으면 마이그레이션 (전체 재빌드)
+  if (!index.version || index.version < INDEX_VERSION) {
+    console.log(`[인덱스 동기화] 버전 업그레이드 필요 (${index.version || 0} → ${INDEX_VERSION}) - 전체 재빌드`);
     return await rebuildIndexFromFolders(onProgress);
   }
 

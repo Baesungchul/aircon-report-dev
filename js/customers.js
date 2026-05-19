@@ -105,6 +105,11 @@ async function openCustomerModal() {
     }
   }
 
+  // ★ 모달 열 때마다 캐시 무효화 - 항상 신선한 데이터
+  // (작업 저장/삭제 직후 변경사항 즉시 반영)
+  if (typeof invalidateRecordsCache === 'function') invalidateRecordsCache();
+  if (typeof invalidateCustomersV2 === 'function') invalidateCustomersV2();
+
   await renderCustomerList();
 }
 
@@ -599,11 +604,13 @@ async function renderCustomerList() {
       // 작업 폴더 목록 (workId/folderName으로)
       const folderNames = new Set();
       visitsToDelete.forEach(v => {
-        if (v.folderName) folderNames.add(v.folderName);
+        // ★ folderName 또는 sourceFolderName 둘 다 확인 (V2 visit은 sourceFolderName 사용)
+        const fn = v.folderName || v.sourceFolderName;
+        if (fn) folderNames.add(fn);
       });
 
-      // 만약 folderName 없는 visits면 폴더 검색
-      const needFolderSearch = visitsToDelete.some(v => !v.folderName);
+      // folderName도 sourceFolderName도 없는 visits면 폴더 검색
+      const needFolderSearch = visitsToDelete.some(v => !v.folderName && !v.sourceFolderName);
 
       // 사용자 확인
       const aptLabel = aptFilter || (visitsToDelete[0]?.apt) || '작업';
@@ -684,8 +691,6 @@ async function renderCustomerList() {
             try {
               await photoFolderHandle.removeEntry(folderName, { recursive: true });
               folderDeleted++;
-              // ★ 인덱스에서도 제거
-              if (typeof scheduleIndexDelete === 'function') scheduleIndexDelete(folderName);
               continue;
             } catch(e1) {
               console.warn(`recursive 삭제 실패 (${folderName}):`, e1.message);
@@ -708,6 +713,14 @@ async function renderCustomerList() {
           } catch(e) {
             folderFailed++;
             console.error(`폴더 ${folderName} 삭제 실패:`, e);
+          }
+        }
+
+        // ★ 폴더 삭제 결과와 무관하게 인덱스에서 모두 제거
+        // (폴더가 이미 없거나 권한 문제로 못 지워도 인덱스만이라도 정리)
+        if (typeof scheduleIndexDelete === 'function') {
+          for (const folderName of folderNames) {
+            scheduleIndexDelete(folderName);
           }
         }
 
@@ -1009,7 +1022,7 @@ function renderCustomerCard(c) {
   const isFacility = lastWork?.isFacility || false;
   const contactName = lastWork?.contactName || '';
 
-  // 모든 visits의 사진 수 합계 - V2는 v.photos 직접 사용
+  // 모든 visits의 사진 수 합계
   let totalPhotos = 0;
   (c.visits || []).forEach(v => {
     if (typeof v.photos === 'number') totalPhotos += v.photos;
@@ -1019,41 +1032,51 @@ function renderCustomerCard(c) {
     }
   });
 
-  // 제목 - 시설 vs 가정 구분
-  let titleLine = '';
+  // ★ 새 레이아웃
+  // 1줄: 작업명 (+ 시설 배지)
+  // 2줄: 호수/영역 + 전화번호
+  // 3줄: 메타 (회수, 날짜)
+  const aptDisplay = apt
+    ? `${isFacility ? '🏢' : '🏠'} ${escHtmlSafe(apt)}`
+    : `${isFacility ? '🏢' : '🏠'} (작업명 없음)`;
+
+  // 호수/영역 정보
+  let unitInfo = '';
   if (isFacility) {
-    // 🏢 시설명 · 영역 N개
-    const zones = lastWork?.unitNames?.length || 0;
-    titleLine = `🏢 ${escHtmlSafe(apt)}${zones ? ` · ${zones}개 영역` : ''}`;
+    const zones = lastWork?.unitNames || [];
+    if (zones.length > 0) {
+      const shown = zones.slice(0, 2).join(', ');
+      const more = zones.length > 2 ? ` +${zones.length - 2}` : '';
+      unitInfo = `${shown}${more}`;
+    } else {
+      unitInfo = '공용시설';
+    }
   } else {
-    // 가정용 - 작업명 · 호수
-    const unit = lastWork?.unit || c.name || c.phone;
-    if (apt && unit) titleLine = `${escHtmlSafe(apt)} · ${escHtmlSafe(unit)}`;
-    else if (apt) titleLine = escHtmlSafe(apt);
-    else titleLine = escHtmlSafe(unit);
+    const unit = lastWork?.unit || '';
+    unitInfo = unit ? escHtmlSafe(unit) : '';
   }
 
-  // 연락처 표시 - 시설은 담당자 이름도
-  const phoneDisplay = isFacility && contactName
-    ? `📞 ${escHtmlSafe(c.phone)} · ${escHtmlSafe(contactName)}`
-    : `📞 ${escHtmlSafe(c.phone)}${c.address ? ` · 🏠 ${escHtmlSafe(c.address)}` : ''}`;
+  // 전화번호
+  const phone = c.phone || '';
 
   return `
-    <div class="cust-card${isFacility ? ' cust-card-facility' : ''}" data-phone="${escHtmlSafe(c.phone)}" data-apt-filter="${escHtmlSafe(c._aptFilter || '')}" data-workid="${escHtmlSafe(c._workIdFilter || '')}" title="클릭하여 작업 열기">
+    <div class="cust-card${isFacility ? ' cust-card-facility' : ''}" data-phone="${escHtmlSafe(c.phone)}" data-apt-filter="${escHtmlSafe(c._aptFilter || '')}" data-workid="${escHtmlSafe(c._workIdFilter || '')}">
       <div class="cust-card-head">
-        <div class="cust-card-name">${titleLine}</div>
+        <div class="cust-card-name">${aptDisplay}</div>
         <div class="cust-card-actions">
           <button class="cust-card-btn cust-card-open" data-phone="${escHtmlSafe(c.phone)}" data-apt-filter="${escHtmlSafe(c._aptFilter || '')}" data-workid="${escHtmlSafe(c._workIdFilter || '')}" title="작업 열기"><span class="btn-ic">📂</span><span class="btn-tx">열기</span></button>
           <button class="cust-card-btn cust-card-edit" data-phone="${escHtmlSafe(c.phone)}" title="정보 수정"><span class="btn-ic">✏️</span><span class="btn-tx">정보</span></button>
           <button class="cust-card-btn cust-card-del" data-phone="${escHtmlSafe(c.phone)}" data-apt-filter="${escHtmlSafe(c._aptFilter || '')}" data-workid="${escHtmlSafe(c._workIdFilter || '')}" title="삭제"><span class="btn-ic">🗑️</span><span class="btn-tx">삭제</span></button>
         </div>
       </div>
-      <div class="cust-card-line">${phoneDisplay}</div>
+      <div class="cust-card-line cust-card-unitphone">
+        ${unitInfo ? `<span class="cust-unit">${unitInfo}</span>` : ''}
+        ${phone ? `<span class="cust-phone">📞 ${escHtmlSafe(phone)}</span>` : ''}
+      </div>
       <div class="cust-card-line cust-card-meta">
         <span>${visitText} 작업</span>
         <span>· ${lastVisit}</span>
         ${totalPhotos > 0 ? `<span>· 사진 ${totalPhotos}장</span>` : ''}
-        ${c.memo ? `<span class="cust-card-memo">· 💬 ${escHtmlSafe(c.memo)}</span>` : ''}
       </div>
     </div>
   `;
@@ -1061,27 +1084,34 @@ function renderCustomerCard(c) {
 
 // 작업 카드 (전화번호 없는 작업) - 고객 카드와 동일한 형식
 function renderWorkCard(w) {
-  const unitNames = w.units.map(u => u.name).filter(n => n);
-  let unitText = '';
+  const isFacility = w.session?.workType === 'facility';
+  const unitNames = (w.units || []).map(u => u.name).filter(n => n);
+
+  // 호수/영역 정보
+  let unitInfo = '';
   if (unitNames.length > 0) {
-    const shown = unitNames.slice(0, 3);
-    const remain = unitNames.length - shown.length;
-    unitText = shown.join(', ') + (remain > 0 ? ` +${remain}` : '');
+    const shown = unitNames.slice(0, 2).join(', ');
+    const more = unitNames.length > 2 ? ` +${unitNames.length - 2}` : '';
+    unitInfo = `${shown}${more}`;
   }
 
-  // 고객 카드와 동일: "작업명 · 호수" 형식
-  const titleLine = `${escHtmlSafe(w.apt || '작업')} · ${unitText ? escHtmlSafe(unitText) : `${w.units.length}호수`}`;
+  const aptDisplay = w.apt
+    ? `${isFacility ? '🏢' : '🏠'} ${escHtmlSafe(w.apt)}`
+    : `${isFacility ? '🏢' : '🏠'} (작업명 없음)`;
 
   return `
-    <div class="cust-card cust-card-work" data-folder="${escHtmlSafe(w.folderName)}" data-apt="${escHtmlSafe(w.apt || '')}" data-date="${escHtmlSafe(w.date || '')}">
+    <div class="cust-card cust-card-work${isFacility ? ' cust-card-facility' : ''}" data-folder="${escHtmlSafe(w.folderName)}" data-apt="${escHtmlSafe(w.apt || '')}" data-date="${escHtmlSafe(w.date || '')}">
       <div class="cust-card-head">
-        <div class="cust-card-name">${titleLine}</div>
+        <div class="cust-card-name">${aptDisplay}</div>
         <div class="cust-card-actions">
           <button class="cust-card-btn cust-card-work-open" data-folder="${escHtmlSafe(w.folderName)}" data-apt="${escHtmlSafe(w.apt || '')}" data-date="${escHtmlSafe(w.date || '')}" title="작업 열기"><span class="btn-ic">📂</span><span class="btn-tx">열기</span></button>
           <button class="cust-card-btn cust-card-work-del" data-folder="${escHtmlSafe(w.folderName)}" title="삭제"><span class="btn-ic">🗑️</span><span class="btn-tx">삭제</span></button>
         </div>
       </div>
-      <div class="cust-card-line"><span style="color:var(--mu);font-style:italic;">📞 미입력</span></div>
+      <div class="cust-card-line cust-card-unitphone">
+        ${unitInfo ? `<span class="cust-unit">${escHtmlSafe(unitInfo)}</span>` : ''}
+        <span class="cust-phone" style="color:var(--mu);font-style:italic;">📞 미입력</span>
+      </div>
       <div class="cust-card-line cust-card-meta">
         <span style="color:var(--mu);">${escHtmlSafe(w.date)}</span>
         <span>· 사진 ${w.totalPhotos}장</span>

@@ -184,6 +184,8 @@ async function rebuildCustomersFromSessions(opts = {}) {
           date: data.date || entry.name.slice(0, 10),
           savedAt: data.savedAt || '',
           workType: data.workType || 'household',
+          // ★ 공용시설 facilityCustomer 포함
+          facilityCustomer: data.facilityCustomer || null,
           units: (data.units || []).map(u => ({
             name: u.name,
             customer: u.customer
@@ -222,8 +224,45 @@ async function rebuildCustomersFromSessions(opts = {}) {
 // 작업 1건에서 고객 visits 추출 (헬퍼)
 function processWorkForCustomers(work, customersByPhone) {
   if (!work || !work.units) return;
-  if (work.workType === 'facility') return;  // 시설 모드 스킵
 
+  // ★ 공용시설 모드 - facilityCustomer에서 전화번호 추출
+  if (work.workType === 'facility') {
+    const fc = work.facilityCustomer;
+    if (!fc) return;
+    const phone = normalizePhone(fc.phone || '');
+    if (!phone) return;
+
+    if (!customersByPhone.has(phone)) {
+      customersByPhone.set(phone, { visits: [], lastVisit: '' });
+    }
+    const c = customersByPhone.get(phone);
+
+    // 공용시설은 작업 하나당 visit 하나 (호수 단위 X)
+    const visit = {
+      workId: work.workId,
+      apt: work.apt,
+      unit: work.apt,           // unit = apt (공용시설은 전체가 한 단위)
+      unitName: work.apt,
+      date: work.date,
+      savedAt: work.savedAt,
+      sourceFolderName: work.folderName,
+      workType: 'facility',
+      isFacility: true,         // ★ 카드 렌더용 플래그
+      unitNames: (work.units || []).map(u => u.name).filter(Boolean),  // ★ 영역 이름들
+      contactName: fc.contact || '',
+      memo: fc.memo || '',
+      address: fc.address || '',
+      contact: fc.contact || ''
+    };
+    c.visits.push(visit);
+
+    if (!c.lastVisit || (work.date || '') > c.lastVisit) {
+      c.lastVisit = work.date || '';
+    }
+    return;
+  }
+
+  // 가정용 모드 - 호수별 customer
   work.units.forEach(u => {
     const phone = normalizePhone(u.customer?.phone || '');
     if (!phone) return;
