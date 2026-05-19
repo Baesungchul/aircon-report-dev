@@ -1,5 +1,5 @@
-// 서비스워커 v145 - 1.191: _justClosedTimer 체크 최우선 (✕ 버튼 클릭 시 메인 가는 문제 해결)
-const CACHE = 'ac1004-v145';
+// 서비스워커 v150 - 1.196: 고객 카드 삭제 - sourceFolderName 인식 + 인덱스 일괄 정리
+const CACHE = 'ac1004-v150';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

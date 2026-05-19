@@ -1520,6 +1520,22 @@ body.overlay-active{overflow:hidden!important;}
   text-overflow:ellipsis;
   white-space:nowrap;
 }
+/* ★ 호수 + 전화번호 한 줄 */
+.cust-card-unitphone{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  font-size:13px;
+}
+.cust-card-unitphone .cust-unit{
+  color:var(--tx);
+  font-weight:600;
+}
+.cust-card-unitphone .cust-phone{
+  color:var(--ac2);
+  font-weight:600;
+}
 .cust-card-meta{
   color:var(--mu);
   font-size:11px;
