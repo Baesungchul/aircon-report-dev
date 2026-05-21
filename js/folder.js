@@ -16,7 +16,7 @@ async function sessionAutoSaveNow() {
   clearTimeout(_autoSaveTimer);
   try {
     const apt = document.getElementById('aptName')?.value || '';
-    const date = document.getElementById('workDate')?.value || new Date().toISOString().split('T')[0];
+    const date = document.getElementById('workDate')?.value || kstDateStr();
     const worker = document.getElementById('workerName')?.value || '';
     const coName = document.getElementById('coName')?.value || '';
     const coTel = document.getElementById('coTel')?.value || '';
@@ -35,7 +35,7 @@ async function sessionAutoSaveNow() {
       saveId:      'session_data',
       label:       '[세션]',
       apt, date, worker,
-      savedAt:     new Date().toISOString(),
+      savedAt:     kstIsoString(),
       companyName: coName,
       companyTel:  coTel,
       companyDesc: coDesc,
@@ -377,7 +377,7 @@ function updatePendingUI() {
 const _indexCounter = new Map();
 
 async function findNextFileIndex(unitDir, typeLabel) {
-  const date = document.getElementById('workDate').value || new Date().toISOString().split('T')[0];
+  const date = document.getElementById('workDate').value || kstDateStr();
   const apt  = document.getElementById('aptName').value  || '작업';
   const key  = `${date}_${apt}/${unitDir.name}/${typeLabel}`;
 
@@ -879,7 +879,7 @@ async function diagnoseWriteTest() {
   try {
     const firstPhoto = units[0]?.before[0];
     if (firstPhoto) {
-      const date    = document.getElementById('workDate').value || new Date().toISOString().split('T')[0];
+      const date    = document.getElementById('workDate').value || kstDateStr();
       const apt     = document.getElementById('aptName').value  || '작업';
       const safe    = units[0].name.replace(/[\/\\:*?"<>|]/g, '_');
       const aptSafe = apt.replace(/[\/\\:*?"<>|]/g, '_');
@@ -1002,7 +1002,7 @@ async function savePhotosToFolder() {
     );
   }
 
-  const date = document.getElementById('workDate').value || new Date().toISOString().split('T')[0];
+  const date = document.getElementById('workDate').value || kstDateStr();
   const apt  = document.getElementById('aptName').value || '작업';
   const aptSafe = apt.replace(/[\/\\:*?"<>|]/g, '_');
 
@@ -1130,6 +1130,8 @@ function escH(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 function showImg(src) {
   document.getElementById('modalImg').src = src;
   document.getElementById('imgModal').classList.add('open');
+  // ★ 브라우저 viewport 줌 차단 (자체 핀치 줌 사용)
+  if (typeof setViewportZoom === 'function') setViewportZoom(false);
   history.pushState({ imgModal: true }, '');
 }
 function showOverlay(t){

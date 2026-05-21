@@ -53,7 +53,7 @@ async function saveWorkIndex(indexData) {
   _indexWriteInProgress = true;
   try {
     indexData.version = INDEX_VERSION;
-    indexData.updatedAt = new Date().toISOString();
+    indexData.updatedAt = (typeof kstIsoString === 'function') ? kstIsoString() : new Date().toISOString();
 
     // 1차 저장: 임시 파일에
     const tempName = INDEX_FILE_NAME + '.tmp';
@@ -231,7 +231,7 @@ async function rebuildIndexFromFolders(onProgress) {
 
     const indexData = {
       version: INDEX_VERSION,
-      updatedAt: new Date().toISOString(),
+      updatedAt: (typeof kstIsoString === 'function') ? kstIsoString() : new Date().toISOString(),
       works
     };
     await saveWorkIndex(indexData);
@@ -401,7 +401,7 @@ async function syncIndexWithFolders(onProgress) {
   }
 
   // 6단계: 인덱스 저장
-  index.updatedAt = new Date().toISOString();
+  index.updatedAt = (typeof kstIsoString === 'function') ? kstIsoString() : new Date().toISOString();
   await saveWorkIndex(index);
   console.log(`[인덱스 동기화] 완료 - 최종 ${index.works.length}건`);
 

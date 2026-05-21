@@ -152,29 +152,52 @@ function bindAll() {
   document.getElementById('btnJPG2').addEventListener('click', exportJPG);
   document.getElementById('btnPvClose').addEventListener('click', () => {
     document.getElementById('pvModal').classList.remove('open');
-    // 줌 리셋 - 기본 스케일로 복귀
+    _resetPvZoom();
+    setViewportZoom(false);
+  });
+
+  // ★ 보고서 줌 리셋 - state.js의 popstate에서도 호출됨
+  function _resetPvZoom() {
     document.querySelectorAll('#pvScroll .rpage').forEach(p => {
       const baseScale = parseFloat(p.dataset.baseScale) || 0.72;
       p.style.transform = `scale(${baseScale})`;
       const box = p.parentElement;
       if (box && box.classList.contains('pv-pg-scaled')) {
-        box.style.width = `${794 * baseScale}px`;
-        box.style.height = `${1123 * baseScale}px`;
+        const w = 794 * baseScale;
+        const h = 1123 * baseScale;
+        box.style.width = `${w}px`;
+        box.style.height = `${h}px`;
+        const wrap = box.parentElement;
+        if (wrap && wrap.classList.contains('pv-pg-wrap')) {
+          wrap.style.width = `${w}px`;
+          wrap.style.height = `${h}px`;
+        }
       }
     });
     _pvZoom = 1;
-    // viewport 손가락 줌 차단으로 복귀
-    setViewportZoom(false);
-  });
+    const pvScroll = document.getElementById('pvScroll');
+    if (pvScroll) pvScroll.classList.remove('zoomed');
+  }
+  window._resetPvZoom = _resetPvZoom;
 
   // viewport 메타 변경 - 손가락 줌 활성/비활성
   function setViewportZoom(allow) {
     const meta = document.getElementById('metaViewport');
     if (!meta) return;
-    if (allow) {
-      meta.setAttribute('content', 'width=device-width,initial-scale=1.0,maximum-scale=5.0,user-scalable=yes');
-    } else {
-      meta.setAttribute('content', 'width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no');
+    const content = allow
+      ? 'width=device-width,initial-scale=1.0,maximum-scale=5.0,user-scalable=yes'
+      : 'width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no';
+    meta.setAttribute('content', content);
+
+    // ★ 차단으로 전환 시 - 현재 줌도 강제 1.0으로 리셋
+    // (모바일 브라우저가 줌 상태를 유지하는 버그 방지)
+    if (!allow) {
+      // 잠시 메타를 제거했다가 다시 설정해야 적용되는 브라우저가 있음
+      requestAnimationFrame(() => {
+        meta.setAttribute('content', 'width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,minimum-scale=1.0');
+        // 강제 스크롤 위치 리셋 (줌 영향 제거)
+        window.scrollTo(0, window.scrollY);
+      });
     }
   }
   // 전역 노출 (다른 파일에서도 호출 가능)
@@ -188,30 +211,387 @@ function bindAll() {
       const baseScale = parseFloat(p.dataset.baseScale) || 0.72;
       const finalScale = baseScale * _pvZoom;
       p.style.transform = `scale(${finalScale})`;
-      // 부모 박스도 같이 크기 변경 (스크롤 영역 위해)
+      // 부모 박스 크기 변경 (스크롤 영역 위해)
       const box = p.parentElement;
       if (box && box.classList.contains('pv-pg-scaled')) {
-        box.style.width = `${794 * finalScale}px`;
-        box.style.height = `${1123 * finalScale}px`;
+        const w = 794 * finalScale;
+        const h = 1123 * finalScale;
+        box.style.width = `${w}px`;
+        box.style.height = `${h}px`;
+        // ★ wrap도 같이 크기 맞춤 (그렇지 않으면 화면 틀어짐)
+        const wrap = box.parentElement;
+        if (wrap && wrap.classList.contains('pv-pg-wrap')) {
+          wrap.style.width = `${w}px`;
+          wrap.style.height = `${h}px`;
+        }
       }
     });
+    // ★ 줌 상태 클래스 토글 (1배 초과면 왼쪽 정렬로 전환)
+    const pvScroll = document.getElementById('pvScroll');
+    if (pvScroll) {
+      if (_pvZoom > 1.01) pvScroll.classList.add('zoomed');
+      else pvScroll.classList.remove('zoomed');
+    }
   }
   document.getElementById('btnPvZoomIn')?.addEventListener('click', () => setPvZoom(_pvZoom + 0.2));
   document.getElementById('btnPvZoomOut')?.addEventListener('click', () => setPvZoom(_pvZoom - 0.2));
+
+  // ★ 두 손가락 핀치 줌 - CSS transform 사용 (브라우저 viewport 줌 X → 깨끗한 화질)
+  const pvScroll = document.getElementById('pvScroll');
+  if (pvScroll) {
+    // 시작점 기준 (점프 방지 위해 시작 시 스크롤/줌 기록)
+    let pinchStartDist = 0;
+    let pinchStartZoom = 1;
+    let pinchStartFinger = null;   // 화면 좌표 (스크롤 영역 내)
+    let pinchStartScroll = null;   // 시작 시 스크롤 위치
+    let pinchTimer = 0;
+    let pendingTouches = null;
+
+    // ★ Touch 객체(clientX/Y)와 캐시된 좌표 객체(x/y) 둘 다 지원
+    const tx = (t) => (t.clientX !== undefined ? t.clientX : t.x);
+    const ty = (t) => (t.clientY !== undefined ? t.clientY : t.y);
+    const getDist = (touches) => {
+      const dx = tx(touches[0]) - tx(touches[1]);
+      const dy = ty(touches[0]) - ty(touches[1]);
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+    const getCenter = (touches) => ({
+      x: (tx(touches[0]) + tx(touches[1])) / 2,
+      y: (ty(touches[0]) + ty(touches[1])) / 2
+    });
+
+    pvScroll.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        if (typeof showToast === 'function') showToast(`보고서 핀치 시작`, 'ok');
+        pinchStartDist = getDist(e.touches);
+        pinchStartZoom = _pvZoom;
+        const center = getCenter(e.touches);
+        const rect = pvScroll.getBoundingClientRect();
+        pinchStartFinger = {
+          x: center.x - rect.left,
+          y: center.y - rect.top
+        };
+        pinchStartScroll = {
+          left: pvScroll.scrollLeft,
+          top: pvScroll.scrollTop
+        };
+        pvScroll.style.touchAction = 'none';
+      }
+    }, { passive: true });
+
+    pvScroll.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pendingTouches = [
+          { x: e.touches[0].clientX, y: e.touches[0].clientY },
+          { x: e.touches[1].clientX, y: e.touches[1].clientY }
+        ];
+        if (!pinchTimer) pinchTimer = requestAnimationFrame(processPinch);
+      }
+    }, { passive: false });
+
+    function processPinch() {
+      pinchTimer = 0;
+      if (!pendingTouches) return;
+      const touches = pendingTouches;
+      pendingTouches = null;
+
+      const dist = getDist(touches);
+      const center = getCenter(touches);
+      const rect = pvScroll.getBoundingClientRect();
+
+      // ★ pinchStartDist가 0이면 자동 복구
+      if (!pinchStartDist || pinchStartDist === 0) {
+        pinchStartDist = dist;
+        pinchStartZoom = _pvZoom;
+        pinchStartFinger = {
+          x: center.x - rect.left,
+          y: center.y - rect.top
+        };
+        pinchStartScroll = {
+          left: pvScroll.scrollLeft,
+          top: pvScroll.scrollTop
+        };
+        return;
+      }
+
+      // 시작점 기준 줌 계산
+      const ratio = dist / pinchStartDist;
+      const newZoom = Math.max(0.5, Math.min(3, pinchStartZoom * ratio));
+      const actualRatio = newZoom / pinchStartZoom;
+
+      // ★ 디버그 (한 번만)
+      if (!window._pvZoomDebugShown) {
+        window._pvZoomDebugShown = true;
+        if (typeof showToast === 'function') {
+          showToast(`보고서 줌 ✓ ${newZoom.toFixed(2)}x`, 'ok');
+        }
+        setTimeout(() => { window._pvZoomDebugShown = false; }, 1500);
+      }
+
+      // 손가락 현재 위치 (스크롤 영역 내)
+      const fingerX = center.x - rect.left;
+      const fingerY = center.y - rect.top;
+
+      // 시작 시점 손가락 위치의 콘텐츠 절대 좌표
+      const contentX = pinchStartScroll.left + pinchStartFinger.x;
+      const contentY = pinchStartScroll.top + pinchStartFinger.y;
+
+      // 줌 적용 (setPvZoom 후 scrollWidth/Height 변경됨)
+      setPvZoom(newZoom);
+
+      // 확대 후 같은 콘텐츠 좌표
+      const newContentX = contentX * actualRatio;
+      const newContentY = contentY * actualRatio;
+
+      // 새 스크롤 = 콘텐츠 좌표 - 현재 손가락 화면 위치
+      // (손가락이 그 콘텐츠를 가리키게)
+      pvScroll.scrollLeft = newContentX - fingerX;
+      pvScroll.scrollTop = newContentY - fingerY;
+    }
+
+    pvScroll.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) {
+        pinchStartDist = 0;
+        pinchStartFinger = null;
+        pinchStartScroll = null;
+        pendingTouches = null;
+        pvScroll.style.touchAction = 'pan-x pan-y';
+      }
+    }, { passive: true });
+
+    pvScroll.addEventListener('touchcancel', () => {
+      pinchStartDist = 0;
+      pinchStartFinger = null;
+      pinchStartScroll = null;
+      pendingTouches = null;
+      pvScroll.style.touchAction = 'pan-x pan-y';
+    }, { passive: true });
+  }
 
   // 이미지 모달
   function closeImgModal() {
     const m = document.getElementById('imgModal');
     if (!m.classList.contains('open')) return;
     m.classList.remove('open');
-    // ★ 방금 닫았다고 표시 → 다음 popstate는 종료 확인 안 함
+    // 줌 리셋
+    const img = document.getElementById('modalImg');
+    if (img) {
+      img.style.transform = '';
+      img.style.transformOrigin = '';
+    }
+    _imgZoom = 1;
+    _imgPanX = 0;
+    _imgPanY = 0;
+    // 방금 닫았다고 표시 → 다음 popstate는 종료 확인 안 함
     if (typeof window._markModalJustClosed === 'function') window._markModalJustClosed();
     if (history.state?.imgModal) history.back();
   }
   document.getElementById('imgX').addEventListener('click', closeImgModal);
-  document.getElementById('imgModal').addEventListener('click', e => {
-    if (e.target === document.getElementById('imgModal')) closeImgModal();
-  });
+  // ★ 화면 영역 클릭 닫기 제거 - 닫기 버튼만으로 닫기 (확대 중 실수 클릭 방지)
+
+  // ★ 사진 모달 핀치 줌 + 한 손가락 팬
+  let _imgZoom = 1;
+  let _imgPanX = 0;
+  let _imgPanY = 0;
+  attachPinchZoomToImage(document.getElementById('imgModal'), document.getElementById('modalImg'),
+    (z, px, py) => { _imgZoom = z; _imgPanX = px; _imgPanY = py; },
+    () => ({ zoom: _imgZoom, panX: _imgPanX, panY: _imgPanY })
+  );
+
+  /**
+   * 이미지에 핀치 줌 + 한 손가락 팬 부착
+   * 시작점 기준 + RAF에서 최신 터치 정보만 처리 (간단하고 정확)
+   */
+  function attachPinchZoomToImage(container, img, setState, getState) {
+    if (!container || !img) return;
+
+    let pinchStartDist = 0;
+    let pinchStartZoom = 1;
+    let pinchStartPan = null;
+    let pinchStartCenter = null;
+    let imgOriginalCenter = null;  // transform 적용 전 이미지 중심 화면 좌표
+    let panStartTouch = null;
+    let rafId = 0;
+    let pendingTouches = null;
+
+    // ★ Touch 객체(clientX/Y)와 캐시된 좌표 객체(x/y) 둘 다 지원
+    const tx = (t) => (t.clientX !== undefined ? t.clientX : t.x);
+    const ty = (t) => (t.clientY !== undefined ? t.clientY : t.y);
+    const getDist = (touches) => {
+      const dx = tx(touches[0]) - tx(touches[1]);
+      const dy = ty(touches[0]) - ty(touches[1]);
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+    const getCenter = (touches) => ({
+      x: (tx(touches[0]) + tx(touches[1])) / 2,
+      y: (ty(touches[0]) + ty(touches[1])) / 2
+    });
+
+    function apply() {
+      const s = getState();
+      img.style.transformOrigin = 'center center';
+      img.style.transform = `translate(${s.panX}px, ${s.panY}px) scale(${s.zoom})`;
+    }
+
+    container.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        if (typeof showToast === 'function') {
+          showToast(`핀치: ${container.id || '?'}`, 'ok');
+        }
+        pinchStartDist = getDist(e.touches);
+        pinchStartCenter = getCenter(e.touches);
+        const s = getState();
+        pinchStartZoom = s.zoom;
+        pinchStartPan = { x: s.panX, y: s.panY };
+
+        // 이미지 원래 중심 = 현재 시각적 중심 - 현재 pan
+        const rect = img.getBoundingClientRect();
+        imgOriginalCenter = {
+          x: rect.left + rect.width / 2 - s.panX,
+          y: rect.top + rect.height / 2 - s.panY
+        };
+      } else if (e.touches.length === 1) {
+        const s = getState();
+        if (s.zoom > 1.05) {
+          panStartTouch = {
+            x: e.touches[0].clientX,
+            y: e.touches[0].clientY,
+            panX: s.panX,
+            panY: s.panY
+          };
+        } else {
+          panStartTouch = null;
+        }
+      }
+    }, { passive: false });
+
+    container.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pendingTouches = {
+          type: 'pinch',
+          touches: [
+            { x: e.touches[0].clientX, y: e.touches[0].clientY },
+            { x: e.touches[1].clientX, y: e.touches[1].clientY }
+          ]
+        };
+        if (!rafId) rafId = requestAnimationFrame(process);
+      } else if (e.touches.length === 1 && panStartTouch) {
+        e.preventDefault();
+        pendingTouches = {
+          type: 'pan',
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY
+        };
+        if (!rafId) rafId = requestAnimationFrame(process);
+      }
+    }, { passive: false });
+
+    function process() {
+      rafId = 0;
+      if (!pendingTouches) return;
+      const p = pendingTouches;
+      pendingTouches = null;
+
+      if (p.type === 'pinch') {
+        const dist = getDist(p.touches);
+        const center = getCenter(p.touches);
+
+        // ★ pinchStartDist가 0이거나 NaN이면 현재 상태를 시작점으로 (자동 복구)
+        if (!pinchStartDist || pinchStartDist === 0) {
+          pinchStartDist = dist;
+          pinchStartCenter = center;
+          const sNow = getState();
+          pinchStartZoom = sNow.zoom;
+          pinchStartPan = { x: sNow.panX, y: sNow.panY };
+          const rect = img.getBoundingClientRect();
+          imgOriginalCenter = {
+            x: rect.left + rect.width / 2 - sNow.panX,
+            y: rect.top + rect.height / 2 - sNow.panY
+          };
+          return;  // 다음 프레임부터 정상 계산
+        }
+
+        // 시작점 기준 비율
+        const ratio = dist / pinchStartDist;
+        const newZoom = Math.max(1, Math.min(5, pinchStartZoom * ratio));
+        const actualRatio = newZoom / pinchStartZoom;
+
+        // ★ 디버그: 줌 적용 여부 확인 (한 번만 표시)
+        if (!window._zoomDebugShown) {
+          window._zoomDebugShown = true;
+          if (typeof showToast === 'function') {
+            showToast(`사진 줌 ✓ ${newZoom.toFixed(2)}x`, 'ok');
+          }
+          setTimeout(() => { window._zoomDebugShown = false; }, 1500);
+        }
+
+        // 시각적 중심 (시작 시점)
+        const visualCenterX = imgOriginalCenter.x + pinchStartPan.x;
+        const visualCenterY = imgOriginalCenter.y + pinchStartPan.y;
+
+        // 손가락이 시각적 중심에서 떨어진 거리
+        const fromCenterX = pinchStartCenter.x - visualCenterX;
+        const fromCenterY = pinchStartCenter.y - visualCenterY;
+
+        // 손가락 이동 (시작 → 현재)
+        const moveX = center.x - pinchStartCenter.x;
+        const moveY = center.y - pinchStartCenter.y;
+
+        // 새 pan
+        const newPanX = pinchStartPan.x + moveX + fromCenterX * (1 - actualRatio);
+        const newPanY = pinchStartPan.y + moveY + fromCenterY * (1 - actualRatio);
+
+        setState(newZoom, newPanX, newPanY);
+        apply();
+      } else if (p.type === 'pan' && panStartTouch) {
+        const dx = p.x - panStartTouch.x;
+        const dy = p.y - panStartTouch.y;
+        const s = getState();
+        setState(s.zoom, panStartTouch.panX + dx, panStartTouch.panY + dy);
+        apply();
+      }
+    }
+
+    container.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) {
+        pinchStartDist = 0;
+        pinchStartCenter = null;
+        imgOriginalCenter = null;
+        // 한 손가락 남으면 팬 시작점으로
+        if (e.touches.length === 1) {
+          const s = getState();
+          if (s.zoom > 1.05) {
+            panStartTouch = {
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY,
+              panX: s.panX,
+              panY: s.panY
+            };
+          }
+        }
+      }
+      if (e.touches.length === 0) {
+        panStartTouch = null;
+        const s = getState();
+        if (s.zoom < 1.05) {
+          setState(1, 0, 0);
+          apply();
+        }
+      }
+    }, { passive: true });
+
+    container.addEventListener('touchcancel', () => {
+      pinchStartDist = 0;
+      pinchStartCenter = null;
+      imgOriginalCenter = null;
+      panStartTouch = null;
+      pendingTouches = null;
+    }, { passive: true });
+  }
+  window.attachPinchZoomToImage = attachPinchZoomToImage;
 
   // 유닛 리스트 이벤트 위임
   const ul = document.getElementById('uList');

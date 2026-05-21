@@ -310,11 +310,20 @@ function setupBackButtonHandler() {
 
   // ★ 방금 닫힌 모달 추적 (history.back 후 popstate 발생 시 메인으로 처리 안 하기)
   let _justClosedTimer = 0;
+  // ★ 종료 확인됨 - 다음 popstate는 종료 확인 다시 띄우지 않음
+  let _exitConfirmed = false;
   window._markModalJustClosed = function() {
     _justClosedTimer = Date.now();
   };
 
   window.addEventListener('popstate', (e) => {
+    // ★ -1) 종료가 이미 확인됨 - 한 번 더 뒤로 (브라우저가 알아서 처리)
+    if (_exitConfirmed) {
+      _exitConfirmed = false;
+      try { window.history.back(); } catch(err) {}
+      return;
+    }
+
     // ★ 0) 방금 모달을 닫은 직후의 popstate → 추가 처리 안 함
     // (closeReorderFullView, closeImgModal 등의 history.back으로 발생)
     if (Date.now() - _justClosedTimer < 500) {
@@ -353,6 +362,11 @@ function setupBackButtonHandler() {
         }
       }
       openModal.classList.remove('open');
+      // ★ 보고서 모달 닫을 때 줌 리셋 + viewport 줌 차단
+      if (openModal.id === 'pvModal') {
+        if (typeof window._resetPvZoom === 'function') window._resetPvZoom();
+        if (typeof setViewportZoom === 'function') setViewportZoom(false);
+      }
       _justClosedTimer = Date.now();
       history.pushState({ page: 'main' }, '', location.href);
       return;
@@ -369,22 +383,16 @@ function setupBackButtonHandler() {
       }
 
       // 종료 시도:
-      // PWA/Chrome 앱 환경에서는 window.close()가 동작
+      // ★ 종료 의도 마킹 - 다음 popstate에서 또 종료 확인 안 띄움
+      _exitConfirmed = true;
+
+      // 1) window.close() (PWA/Chrome 앱)
       try { window.close(); } catch(e) {}
 
-      // 동작 안 하면 빈 페이지로 이동 (사용자가 한번 더 뒤로가기 누르면 종료)
-      // 더 확실한 방법: location.replace로 진입 페이지로 가서 사용자가 한 번 더 누르면 종료
-      try {
-        // history 0개로 만들기 시도
-        const totalDepth = history.length;
-        if (totalDepth > 1) {
-          history.go(-(totalDepth - 1));
-        } else {
-          window.history.back();
-        }
-      } catch(e) {
-        window.history.back();
-      }
+      // 2) 안 닫히면 단순히 history.back() 한 번
+      //    브라우저가 더 뒤로갈 게 없으면 탭 닫힘 (모바일)
+      //    또는 빈 페이지로 (홈 → 종료는 사용자가 직접)
+      try { window.history.back(); } catch(e) {}
     } else {
       // 취소 → 메인 상태 다시 pushState
       history.pushState({ page: 'main' }, '', location.href);

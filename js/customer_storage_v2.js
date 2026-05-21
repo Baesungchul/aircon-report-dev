@@ -79,7 +79,7 @@ async function updateCustomerMeta(phone, info) {
   if (info.memo !== undefined) _metaCache[norm].memo = info.memo;
   if (info.email !== undefined) _metaCache[norm].email = info.email;
 
-  _metaCache[norm].updatedAt = new Date().toISOString();
+  _metaCache[norm].updatedAt = (typeof kstIsoString === 'function') ? kstIsoString() : new Date().toISOString();
   if (!_metaCache[norm].createdAt) _metaCache[norm].createdAt = _metaCache[norm].updatedAt;
 
   // 캐시 무효화

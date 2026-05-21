@@ -433,8 +433,11 @@ async function renderCustomerList() {
     filtered = items.filter(it => {
       // sortDate 없는 항목은 통과 (필터 못 함)
       if (!it.sortDate) return true;
-      if (dateFrom && it.sortDate < dateFrom) return false;
-      if (dateTo && it.sortDate > dateTo) return false;
+      // ★ sortDate가 ISO 시간 형식이면 날짜 부분만 추출해서 비교
+      // 예: "2026-05-19T15:30:00.123Z" → "2026-05-19"
+      const sortDateOnly = String(it.sortDate).slice(0, 10);
+      if (dateFrom && sortDateOnly < dateFrom) return false;
+      if (dateTo && sortDateOnly > dateTo) return false;
       return true;
     });
   }
@@ -535,7 +538,19 @@ async function renderCustomerList() {
     searchEl.addEventListener('input', e => {
       _customerSearch = e.target.value;
       clearTimeout(searchEl._timer);
-      searchEl._timer = setTimeout(renderCustomerList, 200);
+      searchEl._timer = setTimeout(async () => {
+        // ★ 포커스/커서 위치 보존
+        const wasFocused = document.activeElement === searchEl;
+        const cursorPos = searchEl.selectionStart;
+        await renderCustomerList();
+        if (wasFocused) {
+          const newEl = document.getElementById('customerSearchInp');
+          if (newEl) {
+            newEl.focus();
+            try { newEl.setSelectionRange(cursorPos, cursorPos); } catch(e) {}
+          }
+        }
+      }, 200);
     });
   }
 

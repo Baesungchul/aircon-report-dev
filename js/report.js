@@ -544,20 +544,24 @@ async function buildAndPreview(){
   scroll.innerHTML='';
   const pages=document.getElementById('rpWrap').querySelectorAll('.rpage');
   const baseScale=Math.min(0.72,(window.innerWidth-40)/794);
+  const w0 = 794*baseScale;
+  const h0 = 1123*baseScale;
   pages.forEach((pg,i)=>{
     const wrap=document.createElement('div'); wrap.className='pv-pg-wrap';
+    wrap.style.width = `${w0}px`;
+    wrap.style.height = `${h0}px`;
     const lbl=document.createElement('div'); lbl.className='pv-pg-num'; lbl.textContent=`${i+1} / ${pages.length}페이지`;
     const clone=pg.cloneNode(true);
     clone.style.transform=`scale(${baseScale})`;
     clone.style.transformOrigin='top left';
     clone.style.width='794px';
     clone.dataset.baseScale = baseScale;  // ★ 기본 스케일 저장
-    const box=document.createElement('div'); box.className='pv-pg-scaled'; box.style.width=`${794*baseScale}px`; box.style.height=`${1123*baseScale}px`;
+    const box=document.createElement('div'); box.className='pv-pg-scaled'; box.style.width=`${w0}px`; box.style.height=`${h0}px`;
     box.appendChild(clone); wrap.appendChild(lbl); wrap.appendChild(box); scroll.appendChild(wrap);
   });
     document.getElementById('pvModal').classList.add('open');
-    // 미리보기 열렸으니 손가락 줌 허용
-    if (typeof setViewportZoom === 'function') setViewportZoom(true);
+    // ★ viewport 줌은 끄고 CSS transform으로 자체 줌 처리 (깨끗한 화질)
+    if (typeof setViewportZoom === 'function') setViewportZoom(false);
     showToast(`보고서 ${pages.length}페이지 준비됨`,'ok');
   } catch(e) {
     console.error('[보고서] 생성 실패:', e);

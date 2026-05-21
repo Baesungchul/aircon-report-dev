@@ -180,53 +180,43 @@ async function saveToFolder(opts) {
     dateFolderName = currentFolderName;
     console.log(`📁 기존 폴더 덮어쓰기: ${dateFolderName}`);
 
-    // 불필요한 파일 정리
+    // ★★ 안전 강화: 사진 파일은 절대 삭제하지 않음 ★★
+    // 이전엔 "expectedFiles에 없으면 삭제"로 원본 사진이 사라지는 버그 발생
+    // 이제는 작업 자체가 명시적으로 사진 삭제를 의도한 경우 외엔 손대지 않음
+    //
+    // 디스크의 사진은 단일 진실 공급원. 메모리에 사진 객체가 없어도
+    // 사용자가 명시적으로 삭제한 게 아니라면 디스크 사진은 보존.
+    //
+    // 정리는 다음 두 가지만:
+    // 1) 빈 work 폴더 제거 (사진이 0장인 호수)
+    // 2) work 폴더 자체가 메모리 units에 없는 경우 (호수 삭제됨)
     try {
       const oldDir = await photoFolderHandle.getDirectoryHandle(dateFolderName);
-      const expectedFiles = new Set();
-      const protectedWorkDirs = new Set();
+
+      // 메모리에 있는 workNum 목록
+      const memoryWorkNums = new Set();
       units.forEach(u => {
         const workNum = String(u._workNum || getWorkNumber(u.name)).padStart(2,'0');
-        const workKey = `work${workNum}`;
-        if (u._photosOnDisk?.skipPhotoSync) {
-          protectedWorkDirs.add(workKey);
-          for (let i = 1; i <= u._photosOnDisk.before; i++)
-            expectedFiles.add(`${workKey}/A_image${String(i).padStart(2,'0')}.jpg`);
-          for (let i = 1; i <= u._photosOnDisk.after; i++)
-            expectedFiles.add(`${workKey}/B_image${String(i).padStart(2,'0')}.jpg`);
-          (u._photosOnDisk.specials || []).forEach((cnt, si) => {
-            for (let i = 1; i <= cnt; i++)
-              expectedFiles.add(`${workKey}/S${si+1}_image${String(i).padStart(2,'0')}.jpg`);
-          });
-          return;
-        }
-        for (let i = 1; i <= u.before.length; i++)
-          expectedFiles.add(`${workKey}/A_image${String(i).padStart(2,'0')}.jpg`);
-        for (let i = 1; i <= u.after.length; i++)
-          expectedFiles.add(`${workKey}/B_image${String(i).padStart(2,'0')}.jpg`);
-        u.specials.forEach((sp, si) => {
-          for (let i = 1; i <= sp.photos.length; i++)
-            expectedFiles.add(`${workKey}/S${si+1}_image${String(i).padStart(2,'0')}.jpg`);
-        });
+        memoryWorkNums.add(`work${workNum}`);
       });
-      let deletedCount = 0;
+
+      // 디스크 work 폴더 순회 - 메모리에 없는 폴더만 삭제 (호수 자체가 삭제된 경우)
+      // ★ 단 호수 삭제는 사용자가 명시적으로 했을 때만 발생하므로 안전
+      const dirsToRemove = [];
       for await (const [workName, workHandle] of oldDir.entries()) {
         if (workHandle.kind !== 'directory' || !/^work\d+/.test(workName)) continue;
-        if (protectedWorkDirs.has(workName)) continue;
-        const filesToCheck = [];
-        for await (const [fn, fh] of workHandle.entries()) {
-          if (fh.kind === 'file') filesToCheck.push(fn);
+        if (!memoryWorkNums.has(workName)) {
+          dirsToRemove.push(workName);
         }
-        for (const fn of filesToCheck) {
-          if (!expectedFiles.has(`${workName}/${fn}`)) {
-            try { await workHandle.removeEntry(fn); deletedCount++; } catch(e) {}
-          }
-        }
-        let isEmpty = true;
-        for await (const _ of workHandle.entries()) { isEmpty = false; break; }
-        if (isEmpty) { try { await oldDir.removeEntry(workName); } catch(e) {} }
       }
-      if (deletedCount > 0) console.log(`🗑️ 불필요한 파일 ${deletedCount}개 정리`);
+      for (const workName of dirsToRemove) {
+        try {
+          await oldDir.removeEntry(workName, { recursive: true });
+          console.log(`🗑️ 삭제된 호수 폴더 정리: ${workName}`);
+        } catch(e) {
+          console.warn(`폴더 ${workName} 삭제 실패:`, e.message);
+        }
+      }
     } catch(e) {
       console.warn('기존 폴더 정리 실패:', e.message);
     }
@@ -906,6 +896,16 @@ async function deleteDateFolder(target) {
 
     clearTimeout(safetyTimeout);
     hideOverlay();
+
+    // ★ 인덱스에서도 제거 (작업내역에 남는 문제 해결)
+    if (typeof scheduleIndexDelete === 'function') {
+      scheduleIndexDelete(target.name);
+    }
+    // ★ 모든 캐시 무효화
+    if (typeof invalidateRecordsCache === 'function') invalidateRecordsCache();
+    if (typeof invalidateCustomersV2 === 'function') invalidateCustomersV2();
+    if (typeof invalidateCustomersCache === 'function') invalidateCustomersCache();
+
     showToast(`✓ "${apt}" 삭제됨`, 'ok');
 
     // 목록 새로고침
@@ -1919,6 +1919,7 @@ function renderReorderList() {
   body.querySelectorAll('.reorder-thumb').forEach(img => {
     img.addEventListener('click', e => {
       e.stopPropagation();
+      if (typeof showToast === 'function') showToast(`reorder 사진 클릭: ${img.dataset.fullview ? 'src있음' : 'src없음'}`, 'ok');
       openReorderFullView(img.dataset.fullview);
     });
   });
@@ -2005,8 +2006,12 @@ function bindReorderDrag(body) {
     const item = handle.closest('.reorder-item');
     if (!item) return;
 
-    e.preventDefault();
-    e.stopPropagation();
+    // touchstart는 passive:true이므로 preventDefault 호출하지 않음
+    // (스크롤 차단은 touchmove에서 처리)
+    if (e.type === 'mousedown') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     const ghost = createGhost(item);
@@ -2057,10 +2062,9 @@ function bindReorderDrag(body) {
   }
 
   // ── 이벤트 등록 ──
-  // 터치: body에만 (passive:false 필수)
-  const touchOpts = { passive: false };
-  body.addEventListener('touchstart',  onStart, touchOpts);
-  body.addEventListener('touchmove',   onMove,  touchOpts);
+  // 터치: touchstart는 passive:true (탭 클릭 합성이 막히지 않도록), touchmove는 preventDefault 필요해서 passive:false
+  body.addEventListener('touchstart',  onStart, { passive: true });
+  body.addEventListener('touchmove',   onMove,  { passive: false });
   body.addEventListener('touchend',    onEnd);
   body.addEventListener('touchcancel', onEnd);
 
@@ -2076,8 +2080,8 @@ function bindReorderDrag(body) {
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
     if (drag?.ghost?.el?.parentNode) drag.ghost.el.remove();
     drag = null;
-    body.removeEventListener('touchstart',  onStart, touchOpts);
-    body.removeEventListener('touchmove',   onMove,  touchOpts);
+    body.removeEventListener('touchstart',  onStart);
+    body.removeEventListener('touchmove',   onMove);
     body.removeEventListener('touchend',    onEnd);
     body.removeEventListener('touchcancel', onEnd);
     body.removeEventListener('mousedown',   onStart);
@@ -2085,6 +2089,11 @@ function bindReorderDrag(body) {
     document.removeEventListener('mouseup',   docUp);
   };
 }
+
+// 순서편집 미리보기 줌 상태 (외부 노출용)
+let _reorderImgZoom = 1;
+let _reorderImgPanX = 0;
+let _reorderImgPanY = 0;
 
 function openReorderFullView(src) {
   let fv = document.getElementById('reorderFullView');
@@ -2097,15 +2106,33 @@ function openReorderFullView(src) {
       <button id="reorderFullClose" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,.65);color:#fff;border:none;width:42px;height:42px;border-radius:50%;font-size:22px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center;">✕</button>
       <img id="reorderFullImg" src="" alt="전체화면">
     `;
-    // ★ 닫기 버튼만 이벤트 - 이미지 클릭으로는 닫히지 않음
     fv.querySelector('#reorderFullClose').addEventListener('click', (e) => {
       e.stopPropagation();
       closeReorderFullView();
     });
     document.body.appendChild(fv);
+
+    // ★ 핀치 줌 부착 (한 번만)
+    if (typeof window.attachPinchZoomToImage === 'function') {
+      window.attachPinchZoomToImage(
+        fv,
+        fv.querySelector('#reorderFullImg'),
+        (z, px, py) => { _reorderImgZoom = z; _reorderImgPanX = px; _reorderImgPanY = py; },
+        () => ({ zoom: _reorderImgZoom, panX: _reorderImgPanX, panY: _reorderImgPanY })
+      );
+    }
   }
-  document.getElementById('reorderFullImg').src = src;
+  // ★ 줌 리셋
+  _reorderImgZoom = 1;
+  _reorderImgPanX = 0;
+  _reorderImgPanY = 0;
+  const img = document.getElementById('reorderFullImg');
+  img.src = src;
+  img.style.transform = '';
+  img.style.transformOrigin = '';
   fv.classList.add('open');
+  // ★ 브라우저 viewport 줌 차단 (자체 핀치 줌)
+  if (typeof setViewportZoom === 'function') setViewportZoom(false);
   history.pushState({ reorderFullView: true }, '');
 }
 
@@ -2113,7 +2140,16 @@ function closeReorderFullView() {
   const fv = document.getElementById('reorderFullView');
   if (!fv || !fv.classList.contains('open')) return;
   fv.classList.remove('open');
-  // ★ 방금 닫음 표시 → state.js의 popstate가 종료 확인 안 띄움
+  // ★ 줌 리셋
+  _reorderImgZoom = 1;
+  _reorderImgPanX = 0;
+  _reorderImgPanY = 0;
+  const img = document.getElementById('reorderFullImg');
+  if (img) {
+    img.style.transform = '';
+    img.style.transformOrigin = '';
+  }
+  // 방금 닫음 표시 → state.js의 popstate가 종료 확인 안 띄움
   if (typeof window._markModalJustClosed === 'function') window._markModalJustClosed();
   try { history.back(); } catch(e) {}
 }
