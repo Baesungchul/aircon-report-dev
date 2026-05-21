@@ -11,6 +11,11 @@ const _pendingThumbGen = [];
 let _thumbGenInProgress = false;
 
 async function processPendingThumbGen() {
+  // ★ 테스트: 썸네일 비활성화 시 큐 비우고 종료
+  if (typeof window !== 'undefined' && window.THUMBNAILS_ENABLED === false) {
+    _pendingThumbGen.length = 0;
+    return;
+  }
   if (_thumbGenInProgress || _pendingThumbGen.length === 0) return;
   if (typeof createThumbnailBlob !== 'function') return;
   _thumbGenInProgress = true;
@@ -1253,15 +1258,18 @@ async function restoreFromData(data, dateDir) {
         const workDir = workDirMap.get(ui) || null;
 
         // 메타에서 사진 객체 생성 (썸네일은 즉시 사용 + 원본은 lazy)
+        // ★ 테스트: 썸네일 비활성화 시 meta.thumb 무시 (공정 비교)
+        const thumbsOn = !(typeof window !== 'undefined' && window.THUMBNAILS_ENABLED === false);
         const buildFromMeta = (meta) => {
           if (!meta) return null;
+          const useThumb = thumbsOn && meta.thumb;
           const obj = {
             id: photoId(),
-            dataUrl: meta.thumb || null,  // 썸네일 dataUrl (즉시 표시)
+            dataUrl: useThumb ? meta.thumb : null,  // 썸네일 dataUrl (즉시 표시) 또는 null
             fileName: meta.fname,
             savedToFolder: true,
             hasOriginal: true,
-            lazy: !meta.thumb  // 썸네일 있으면 lazy 아님
+            lazy: !useThumb  // 썸네일 있으면 lazy 아님
           };
           // 원본 lazy 로딩을 위한 fileHandle (보고서 생성 시 필요)
           if (workDir && meta.fname) {
@@ -1325,9 +1333,14 @@ async function restoreFromData(data, dateDir) {
 
         // ★ 썸네일 폴더 핸들 가져오기 (있을 수도 없을 수도)
         let thumbsDir = null;
-        try {
-          thumbsDir = await workDir.getDirectoryHandle('_thumbs');
-        } catch(e) { /* 썸네일 폴더 없음 */ }
+        // ★ 테스트: 썸네일 비활성화 시 _thumbs 폴더 자체를 사용하지 않음 (공정한 비교)
+        if (typeof window !== 'undefined' && window.THUMBNAILS_ENABLED === false) {
+          thumbsDir = null;
+        } else {
+          try {
+            thumbsDir = await workDir.getDirectoryHandle('_thumbs');
+          } catch(e) { /* 썸네일 폴더 없음 */ }
+        }
 
         // ★ 파일 읽기 - 썸네일 우선 + 원본은 lazy
         const readPhoto = async (fh) => {
@@ -1524,6 +1537,8 @@ function photoId() {
 
 // 폴더에서 세션 목록 읽기
 async function doLoad(saveId) {
+  // ★ 성능 측정 시작 (썸네일 ON/OFF 비교용)
+  const _loadStartT = performance.now();
   // 현재 작업이 있고 저장 안 된 경우 - 저장 확인
   if (units.length > 0) {
     if (typeof _dataDirty !== 'undefined' && _dataDirty) {
@@ -1585,7 +1600,10 @@ async function doLoad(saveId) {
     renderAll(); updateStats();
     document.getElementById('slModal').classList.remove('open');
     hideOverlay();
-    showToast(`"${s.label}" 불러오기 완료`,'ok');
+    // ★ 성능 측정 결과 표시 (썸네일 ON/OFF 비교용)
+    const _loadMs = Math.round(performance.now() - _loadStartT);
+    const _mode = (window.THUMBNAILS_ENABLED === false) ? '썸네일OFF' : '썸네일ON';
+    showToast(`"${s.label}" 불러오기 완료 · ${_loadMs}ms (${_mode})`,'ok');
   } catch(e) {
     hideOverlay(); showToast('불러오기 실패: '+e.message,'err');
   }
@@ -1919,7 +1937,6 @@ function renderReorderList() {
   body.querySelectorAll('.reorder-thumb').forEach(img => {
     img.addEventListener('click', e => {
       e.stopPropagation();
-      if (typeof showToast === 'function') showToast(`reorder 사진 클릭: ${img.dataset.fullview ? 'src있음' : 'src없음'}`, 'ok');
       openReorderFullView(img.dataset.fullview);
     });
   });

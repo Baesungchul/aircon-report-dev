@@ -262,7 +262,6 @@ function bindAll() {
 
     pvScroll.addEventListener('touchstart', (e) => {
       if (e.touches.length === 2) {
-        if (typeof showToast === 'function') showToast(`보고서 핀치 시작`, 'ok');
         pinchStartDist = getDist(e.touches);
         pinchStartZoom = _pvZoom;
         const center = getCenter(e.touches);
@@ -319,15 +318,6 @@ function bindAll() {
       const ratio = dist / pinchStartDist;
       const newZoom = Math.max(0.5, Math.min(3, pinchStartZoom * ratio));
       const actualRatio = newZoom / pinchStartZoom;
-
-      // ★ 디버그 (한 번만)
-      if (!window._pvZoomDebugShown) {
-        window._pvZoomDebugShown = true;
-        if (typeof showToast === 'function') {
-          showToast(`보고서 줌 ✓ ${newZoom.toFixed(2)}x`, 'ok');
-        }
-        setTimeout(() => { window._pvZoomDebugShown = false; }, 1500);
-      }
 
       // 손가락 현재 위치 (스크롤 영역 내)
       const fingerX = center.x - rect.left;
@@ -437,9 +427,6 @@ function bindAll() {
     container.addEventListener('touchstart', (e) => {
       if (e.touches.length === 2) {
         e.preventDefault();
-        if (typeof showToast === 'function') {
-          showToast(`핀치: ${container.id || '?'}`, 'ok');
-        }
         pinchStartDist = getDist(e.touches);
         pinchStartCenter = getCenter(e.touches);
         const s = getState();
@@ -518,15 +505,6 @@ function bindAll() {
         const ratio = dist / pinchStartDist;
         const newZoom = Math.max(1, Math.min(5, pinchStartZoom * ratio));
         const actualRatio = newZoom / pinchStartZoom;
-
-        // ★ 디버그: 줌 적용 여부 확인 (한 번만 표시)
-        if (!window._zoomDebugShown) {
-          window._zoomDebugShown = true;
-          if (typeof showToast === 'function') {
-            showToast(`사진 줌 ✓ ${newZoom.toFixed(2)}x`, 'ok');
-          }
-          setTimeout(() => { window._zoomDebugShown = false; }, 1500);
-        }
 
         // 시각적 중심 (시작 시점)
         const visualCenterX = imgOriginalCenter.x + pinchStartPan.x;

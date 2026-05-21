@@ -310,16 +310,19 @@ function setupBackButtonHandler() {
 
   // ★ 방금 닫힌 모달 추적 (history.back 후 popstate 발생 시 메인으로 처리 안 하기)
   let _justClosedTimer = 0;
-  // ★ 종료 확인됨 - 다음 popstate는 종료 확인 다시 띄우지 않음
+  // ★ 종료 확인됨 - 이후 모든 popstate에서 종료 확인 다시 띄우지 않음
   let _exitConfirmed = false;
+  // ★ 종료 진행 중 뒤로가기 횟수 (무한 루프 안전장치)
+  let _exitBackAttempts = 0;
   window._markModalJustClosed = function() {
     _justClosedTimer = Date.now();
   };
 
   window.addEventListener('popstate', (e) => {
-    // ★ -1) 종료가 이미 확인됨 - 한 번 더 뒤로 (브라우저가 알아서 처리)
+    // ★ -1) 종료가 이미 확인됨 - 다시 묻지 않고 계속 뒤로 (히스토리 끝까지)
     if (_exitConfirmed) {
-      _exitConfirmed = false;
+      // 안전장치: 50회 넘게 뒤로 가도 안 끝나면 멈춤 (무한 루프 방지)
+      if (_exitBackAttempts++ > 50) return;
       try { window.history.back(); } catch(err) {}
       return;
     }

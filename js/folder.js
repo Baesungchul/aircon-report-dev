@@ -537,6 +537,8 @@ async function doWriteOne(photo, unitName, typeLabel) {
 
 // ★ 썸네일을 백그라운드에서 _thumbs 폴더에 저장 + photo 객체에 dataUrl 보관
 async function saveThumbnailInBackground(workDir, fname, originalBlob, photo) {
+  // ★ 테스트: 썸네일 비활성화 시 즉시 종료
+  if (typeof window !== 'undefined' && window.THUMBNAILS_ENABLED === false) return;
   if (typeof createThumbnailBlob !== 'function') return;
   try {
     const thumbBlob = await createThumbnailBlob(originalBlob);

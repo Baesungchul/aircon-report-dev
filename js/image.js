@@ -73,8 +73,17 @@ function compressImage(file) {
 const THUMB_MAX_PX = 300;       // 썸네일 최대 크기
 const THUMB_QUALITY = 0.65;     // 썸네일 품질 (작아도 충분)
 
+// ★★★ 테스트 모드: 썸네일 비활성화 ★★★
+// 썸네일 시스템 성능 영향 측정용. true로 되돌리면 정상 동작.
+const THUMBNAILS_ENABLED = false;
+if (typeof window !== 'undefined') window.THUMBNAILS_ENABLED = THUMBNAILS_ENABLED;
+
 // File/Blob → 썸네일 Blob (JPEG)
 function createThumbnailBlob(file) {
+  // ★ 테스트: 비활성화 시 즉시 거부
+  if (!THUMBNAILS_ENABLED) {
+    return Promise.reject(new Error('썸네일 비활성화됨 (테스트)'));
+  }
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
