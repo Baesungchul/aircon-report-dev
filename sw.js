@@ -1,5 +1,5 @@
-// 서비스워커 v167 - 1.213: 핀치줌 NaN 버그 수정 (getDist에 clientX/x 양쪽 좌표 형식 지원), reorder body touchstart는 passive:true (탭 클릭 안정화)
-const CACHE = 'ac1004-v167';
+// 서비스워커 - 1.215 NOTHUMB 테스트 버전: 썸네일 생성 완전 비활성화 (성능 비교용)
+const CACHE = 'ac1004-nothumb-v1';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
