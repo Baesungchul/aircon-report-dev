@@ -329,36 +329,46 @@ body.modal-open{overflow:hidden;position:fixed;width:100%;}
 .pv-title{font-size:13px;font-weight:700;color:var(--tx);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
 .pv-btns{display:flex;gap:4px;flex-shrink:0;}
 .pv-btns .btn{padding:6px 8px;font-size:11px;min-height:32px;white-space:nowrap;}
-/* 보고서 미리보기 - 핀치 줌/이동 가능 */
+/* 보고서 미리보기 - 두 손가락 줌은 자체 처리 (CSS transform) */
 .pv-scroll{
   flex:1;
   overflow:auto;
   padding:18px 14px;
   display:flex;
   flex-direction:column;
+  /* ★ 기본은 가운데 정렬 (한 페이지 폭일 때) */
   align-items:center;
   gap:16px;
   background:#2a2a2a;
-  /* 세로 스크롤 + 핀치줌 모두 허용 */
-  touch-action:pan-y pinch-zoom;
+  touch-action:pan-x pan-y;
   -webkit-overflow-scrolling:touch;
 }
+/* ★ 확대된 상태에서만 좌측 정렬로 전환 (가로 스크롤 가능하게) */
+.pv-scroll.zoomed{
+  align-items:flex-start;
+}
 .pv-scroll *{touch-action:inherit;}
-/* 페이지 자체에 transform 적용 가능하도록 */
 .pv-scroll .rpage{
-  transform-origin:top center;
+  transform-origin:top left;
   will-change:transform;
-  touch-action:pan-y pinch-zoom;
+  image-rendering:auto;
+}
+.pv-pg-scaled{
+  flex-shrink:0;
+  box-shadow:0 6px 28px rgba(0,0,0,.7);
+  overflow:hidden;
+}
+.pv-scroll.pinching .rpage{
+  transition:none;
 }
 .pv-pg-wrap{position:relative;}
 .pv-pg-num{position:absolute;top:-16px;left:0;font-size:9px;color:#999;font-family:'DM Mono',monospace;}
-.pv-pg-scaled{box-shadow:0 6px 28px rgba(0,0,0,.7);overflow:hidden;}
 
-/* IMAGE MODAL */
-.img-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.94);z-index:400;align-items:center;justify-content:center;}
+/* IMAGE MODAL - 핀치 줌 가능 */
+.img-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.94);z-index:400;align-items:center;justify-content:center;overflow:hidden;touch-action:none;}
 .img-modal.open{display:flex;}
-.img-modal img{max-width:95vw;max-height:92vh;border-radius:8px;object-fit:contain;}
-.img-x{position:absolute;top:14px;right:14px;width:34px;height:34px;background:var(--sf);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;border:1px solid var(--bd);}
+.img-modal img{max-width:95vw;max-height:92vh;border-radius:8px;object-fit:contain;will-change:transform;}
+.img-x{position:absolute;top:14px;right:14px;width:34px;height:34px;background:var(--sf);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;border:1px solid var(--bd);z-index:10;}
 
 /* OVERLAY */
 .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:500;align-items:center;justify-content:center;touch-action:none;overscroll-behavior:contain;}
@@ -1184,13 +1194,15 @@ body.overlay-active{overflow:hidden!important;}
   display:none;position:fixed;inset:0;
   background:rgba(0,0,0,.95);z-index:900;
   align-items:center;justify-content:center;
-  cursor:zoom-out;
+  overflow:hidden;
+  touch-action:none;  /* 핀치는 자체 처리 */
 }
 .reorder-fullview.open{display:flex;}
 .reorder-fullview img{
   max-width:100%;max-height:100%;
   object-fit:contain;
   border-radius:4px;
+  will-change:transform;
 }
 
 /* 작은 화면 */

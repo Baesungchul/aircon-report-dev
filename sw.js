@@ -1,5 +1,5 @@
-// 서비스워커 v150 - 1.196: 고객 카드 삭제 - sourceFolderName 인식 + 인덱스 일괄 정리
-const CACHE = 'ac1004-v150';
+// 서비스워커 v167 - 1.213: 핀치줌 NaN 버그 수정 (getDist에 clientX/x 양쪽 좌표 형식 지원), reorder body touchstart는 passive:true (탭 클릭 안정화)
+const CACHE = 'ac1004-v167';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
