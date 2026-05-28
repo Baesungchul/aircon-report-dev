@@ -95,7 +95,6 @@
     <input class="add-inp" id="newName" data-i18n-placeholder="unit.placeholder" placeholder="호수 입력 (예: 101동 201호)">
     <button class="btn b-blue" id="btnAdd" data-i18n="unit.add">➕ 추가</button>
     <button class="btn b-ghost" id="btnBulk" style="font-size:11px" data-i18n="unit.bulk">📋 일괄</button>
-    <button class="btn b-ghost" id="btnClear" style="font-size:11px;color:var(--dn)">🗑️</button>
   </div>
 
   <div class="toolbar">
@@ -137,6 +136,7 @@
         <button class="btn b-ghost" id="setReplayOnboarding" onclick="window.replayOnboarding && window.replayOnboarding()" style="width:100%;justify-content:center;margin-top:6px;font-size:12px;">📋 초기 설정 다시 하기</button>
         <button class="btn b-ghost" id="setClearCache" onclick="window.clearAppCache && window.clearAppCache()" style="width:100%;justify-content:center;margin-top:6px;font-size:12px;color:var(--dn);">🗑️ 앱 캐시 초기화 (버튼 안 먹힐 때)</button>
         <button class="btn b-ghost" id="setRebuildIndex" onclick="window.rebuildWorkIndex && window.rebuildWorkIndex()" style="width:100%;justify-content:center;margin-top:6px;font-size:12px;">🔄 작업기록 재생성 (목록 이상할 때)</button>
+        <button class="btn b-ghost" id="setDiagStorage" onclick="window.showStorageDiagnostics && window.showStorageDiagnostics()" style="width:100%;justify-content:center;margin-top:6px;font-size:12px;">🔍 저장소 상태 진단 (폴더 풀릴 때)</button>
         <button class="btn b-blue" id="setInstallPWA" onclick="window.promptPWAInstall && window.promptPWAInstall()" style="width:100%;justify-content:center;margin-top:6px;font-size:12px;display:none;">📲 홈 화면에 앱 설치 (권한 유지)</button>
         <div id="pwaInstallHint" style="font-size:11px;color:var(--mu);text-align:center;margin-top:6px;line-height:1.5;display:none;">
           💡 앱으로 설치하면 폴더 권한 묻는 횟수가 줄어들어요

@@ -1,5 +1,5 @@
-// 서비스워커 - 1.215 NOTHUMB 테스트 버전: 썸네일 생성 완전 비활성화 (성능 비교용)
-const CACHE = 'ac1004-nothumb-v1';
+// 서비스워커 v198 - 1.244: 사진 순서 편집에서 작업 전↔후 사진 서로 이동 가능 - 드래그 중 포인터가 위치한 컬럼(getSideAt) 동적 판단, 다른 컬럼으로 드롭 시 배열 간 이동, 대상 컬럼 강조 표시. 순서편집 진입 조건도 전+후 합쳐 2장 이상으로 완화
+const CACHE = 'ac1004-v198';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
