@@ -43,26 +43,28 @@ async function _buildAllRecords() {
   if (typeof loadCombinedRecords !== 'function') return;
   if (!photoFolderHandle) return;
 
-  // 현재 캐시가 있으면 비교를 위해 백업
   console.log('[기록캐시] 백그라운드 빌드');
 
-  // ★ customers.js의 상태 변수를 잠시 바꿔야 함
-  // setCustomerFilter가 있으면 사용
-  if (typeof setCustomerFilter === 'function' && typeof getCustomerFilter === 'function') {
-    const prev = getCustomerFilter();
-    try {
-      setCustomerFilter({ useDefault: false, dateFrom: null, dateTo: null });
-      const items = await loadCombinedRecords();
-      _recordsCache = items;
-      _recordsBuiltAt = Date.now();
-      console.log(`[기록캐시] 빌드 완료: ${items.length}건`);
-    } catch(e) {
-      console.warn('[기록캐시] 빌드 실패:', e.message);
-    } finally {
-      setCustomerFilter(prev);
+  try {
+    // ★ 전역 필터 안 건드림 - 명시적 allDates 옵션으로 전체 로드
+    const items = await loadCombinedRecords({ allDates: true });
+    _recordsCache = items;
+    _recordsBuiltAt = Date.now();
+    console.log(`[기록캐시] 빌드 완료: ${items.length}건`);
+
+    // ★ 모달이 열려 있으면 조용히 갱신 (전역 필터 변경 없으므로 사용자가 보던 화면 그대로 + 캐시만 최신)
+    // 단, 사용자가 "전체" 보고 있다면 (캐시 신규 추가분 반영을 위해) 다시 그리기
+    const modalOpen = document.getElementById('customerModal')?.classList.contains('open');
+    if (modalOpen && typeof renderCustomerList === 'function') {
+      // 사용자가 "전체" 또는 명시적 기간일 때만 다시 그리기 (기본 3일은 그대로)
+      const filter = (typeof getCustomerFilter === 'function') ? getCustomerFilter() : { useDefault: true };
+      if (!filter.useDefault) {
+        renderCustomerList();
+      }
     }
+  } catch(e) {
+    console.warn('[기록캐시] 빌드 실패:', e.message);
   }
-  // setter 없으면 빌드 안 함 (customers.js가 첫 로드 시 채움)
 }
 
 window.scheduleBackgroundBuild = function() {
@@ -71,6 +73,9 @@ window.scheduleBackgroundBuild = function() {
     return;
   }
   _cacheRebuildInProgress = true;
+  // ★ 100ms → 3000ms (1.242) - 작업 로딩 중 메인 스레드 경쟁 방지
+  //   - 사용자가 작업 열어 사진 로딩 시작하는데 동시에 폴더 스캔 돌면 paint 멈춤
+  //   - 3초 후 시작 → 사진 로딩이 어느 정도 진행된 후
   setTimeout(async () => {
     try {
       await _buildAllRecords();
@@ -83,7 +88,7 @@ window.scheduleBackgroundBuild = function() {
         scheduleBackgroundBuild();
       }
     }
-  }, 100);
+  }, 3000);
 };
 
 // 앱 시작 시 자동 빌드는 folder.js에서 권한 확보 후 호출됨

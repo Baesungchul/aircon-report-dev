@@ -24,6 +24,7 @@ function getSlides() {
     { id: 's3',      render: renderSlideScreen3 },
     { id: 's4',      render: renderSlideScreen4 },
     { id: 's5',      render: renderSlideScreen5 },
+    { id: 's6',      render: renderSlideScreen6 },
     { id: 'setup',   render: renderSlideSetup },
   ];
 }
@@ -113,286 +114,173 @@ function renderSlideIntro(c) {
   </div>`;
 }
 
-/* ── 슬라이드 2: 메인 화면 구성 ── */
+/* ── 슬라이드 2: 메인 화면 구성 (실제 캡쳐 + 번호 오버레이) ── */
 function renderSlideScreen1(c) {
   c.innerHTML = `
   <div class="ob-slide">
     <div class="ob-slide-ttl">① 메인 화면 구성</div>
-    <div class="ob-screen">
-      <div class="obs-hdr">
-        <div class="obs-logo-row">
-          <span class="obs-logo-ic">❄️</span>
-          <span class="obs-logo-txt">에어컨 보고서 작성기</span>
-          <span class="obs-logo-badge">작업 기록</span>
-        </div>
-        <div class="obs-fields">
-          <div class="obs-field-row">
-            <div class="obs-field"><div class="obs-fl">작업명</div><div class="obs-fv obs-fv-hl">지제더샵 3단지</div></div>
-            <div class="obs-field"><div class="obs-fl">날짜</div><div class="obs-fv">2026.05.11</div></div>
-            <div class="obs-field"><div class="obs-fl">담당자</div><div class="obs-fv">배성철</div></div>
-          </div>
-        </div>
-        <div class="obs-modes">
-          <div class="obs-mode obs-mode-on">🏠 가정용</div>
-          <div class="obs-mode">🏢 공용시설</div>
-        </div>
-        <div class="obs-btns">
-          <div class="obs-btn obs-c-gray">⚙️설정</div>
-          <div class="obs-btn obs-c-orange">🆕새작업</div>
-          <div class="obs-btn obs-c-gold">💾저장</div>
-          <div class="obs-btn obs-c-blue">📄미리보기</div>
-          <div class="obs-btn obs-c-green">⬇️PDF</div>
-          <div class="obs-btn obs-c-org2">🖼️JPG</div>
-        </div>
-      </div>
-      <div class="obs-stats">
-        <div class="obs-stat"><b>2</b><small>총 호수</small></div>
-        <div class="obs-stat"><b>1</b><small>완료</small></div>
-        <div class="obs-stat obs-stat-warn"><b>1</b><small>미완료</small></div>
-        <div class="obs-stat"><b>14</b><small>총 사진</small></div>
-      </div>
-      <div class="obs-badges">
-        ${badge(1)}${badge(2)}${badge(3)}${badge(4)}
-      </div>
+    <div class="ob-img-wrap">
+      <img src="./assets/onboarding/screen1.jpeg" alt="메인 화면">
+      <!-- ① 작업 정보 입력 -->
+      <div class="ob-zone" style="top:10.4%;left:3%;width:94%;height:14.1%;"></div>
+      <div class="ob-pin" style="top:10.4%;left:6%;">1</div>
+      <!-- ② 작업 유형 선택 -->
+      <div class="ob-zone" style="top:25.3%;left:3%;width:94%;height:11.1%;"></div>
+      <div class="ob-pin" style="top:25.3%;left:6%;">2</div>
+      <!-- ③ 주요 버튼 -->
+      <div class="ob-zone" style="top:37.1%;left:3%;width:94%;height:8.9%;"></div>
+      <div class="ob-pin" style="top:37.1%;left:6%;">3</div>
+      <!-- ④ 호수 관리 -->
+      <div class="ob-zone" style="top:49%;left:3%;width:94%;height:18.6%;"></div>
+      <div class="ob-pin" style="top:49%;left:6%;">4</div>
     </div>
     <div class="ob-callouts">
-      ${callout(1,'작업명(아파트명)·날짜·담당자를 입력해요')}
-      ${callout(2,'가정용(호수 1개) 또는 공용시설(다수 영역) 선택')}
-      ${callout(3,'⚙️설정 / 🆕새작업 / 💾저장 / 📄보고서 버튼')}
-      ${callout(4,'현재 작업의 호수·완료·사진 현황을 보여줘요')}
+      ${callout(1,'작업명·작업일자·담당자를 입력해요')}
+      ${callout(2,'가정용(호수별 다른 고객) 또는 공용시설(전체가 한 고객) 선택')}
+      ${callout(3,'⚙️설정 · 🆕새작업 · 💾저장 · 📄보고서 버튼')}
+      ${callout(4,'호수 추가(개별·일괄·🗑️삭제) · 검색 · 전체 펼치기/접기')}
     </div>
   </div>`;
 }
 
-/* ── 슬라이드 3: 호수 추가 ── */
+/* ── 슬라이드 3: 호수 추가 / 카드 구성 (실제 캡쳐 + 번호 오버레이) ── */
 function renderSlideScreen2(c) {
   c.innerHTML = `
   <div class="ob-slide">
-    <div class="ob-slide-ttl">② 호수 추가하기</div>
-    <div class="ob-screen">
-      <div class="obs-add-area">
-        <div class="obs-add-row">
-          <div class="obs-input-box">316동 602호</div>
-          <div class="obs-btn obs-c-blue">➕ 추가</div>
-          <div class="obs-btn obs-c-gray">📋 일괄</div>
-        </div>
-      </div>
-      <div class="obs-card obs-card-open">
-        <div class="obs-card-top">
-          <span class="obs-cnum">1</span>
-          <span class="obs-cname">316동 602호 ✏️</span>
-          <span class="obs-chip obs-chip-done">✅완료</span>
-          <div style="margin-left:auto;display:flex;gap:3px;">
-            <span class="obs-btn obs-btn-xs obs-c-gray">순서편집</span>
-            <span class="obs-btn obs-btn-xs obs-c-gray">✓완료</span>
-            <span class="obs-btn obs-btn-xs obs-c-red">삭제</span>
-          </div>
-        </div>
-        <div class="obs-card-body">
-          <div class="obs-psec">
-            <div class="obs-plabel" style="color:#f06060;">🔴 작업 전 (3장)</div>
-            <div class="obs-thumbs">
-              <div class="obs-th obs-th-f">📷</div>
-              <div class="obs-th obs-th-f">📷</div>
-              <div class="obs-th obs-th-f">📷</div>
-            </div>
-          </div>
-          <div class="obs-psec">
-            <div class="obs-plabel" style="color:#10b981;">🟢 작업 후 (3장)</div>
-            <div class="obs-thumbs">
-              <div class="obs-th obs-th-f">📷</div>
-              <div class="obs-th obs-th-f">📷</div>
-              <div class="obs-th obs-th-f">📷</div>
-            </div>
-          </div>
-          <div class="obs-special">⚠️ 특이사항 (0건) &nbsp;&nbsp;<span class="obs-btn obs-btn-xs obs-c-warn">＋ 추가</span></div>
-          <div class="obs-cust-row"><span class="obs-fl">전화번호</span><span class="obs-input-box" style="flex:1;color:var(--mu)">010-____-____</span></div>
-        </div>
-      </div>
-      <div class="obs-card">
-        <div class="obs-card-top">
-          <span class="obs-cnum">2</span>
-          <span class="obs-cname">316동 603호</span>
-          <span class="obs-chip obs-chip-pnd">⏳진행중</span>
-        </div>
-      </div>
-      <div class="obs-badges">
-        ${badge(1)}${badge(2)}${badge(3)}${badge(4)}${badge(5)}
-      </div>
+    <div class="ob-slide-ttl">② 호수 추가 · 카드 구성</div>
+    <div class="ob-img-wrap">
+      <img src="./assets/onboarding/screen2_card.jpg" alt="호수 카드">
+      <!-- ① 호수명 + 완료/순서편집/삭제 -->
+      <div class="ob-zone" style="top:1%;left:3%;width:94%;height:22%;"></div>
+      <div class="ob-pin" style="top:1%;left:6%;">1</div>
+      <!-- ② 작업 전/후 라벨 + 카메라/파일 버튼 -->
+      <div class="ob-zone" style="top:25%;left:3%;width:94%;height:24%;"></div>
+      <div class="ob-pin" style="top:25%;left:6%;">2</div>
+      <!-- ③ 사진 썸네일 -->
+      <div class="ob-zone" style="top:50%;left:3%;width:94%;height:33%;"></div>
+      <div class="ob-pin" style="top:50%;left:6%;">3</div>
+      <!-- ④ 특이사항 -->
+      <div class="ob-zone" style="top:87%;left:3%;width:94%;height:12%;"></div>
+      <div class="ob-pin" style="top:87%;left:6%;">4</div>
     </div>
     <div class="ob-callouts">
-      ${callout(1,'호수명 입력 후 ➕추가 / 📋일괄로 여러 호수 한번에 추가')}
-      ${callout(2,'카드를 터치하면 펼쳐져요. 작업 전·후 사진 구역이 나타나요')}
-      ${callout(3,'사진 추가 후 완료 표시. 특이사항도 사진+메모로 추가 가능')}
-      ${callout(4,'고객 전화번호 입력 시 다음 방문 때 이력 확인 가능')}
-      ${callout(5,'✏️ 호수명 수정 / 순서편집 / 삭제 버튼')}
+      ${callout(1,'호수명 ✏️ 수정 · ✅완료 · 🔄순서편집 · 🗑️삭제')}
+      ${callout(2,'작업 전(🔴) / 작업 후(🟢) 각각 📷카메라 또는 📁파일로 사진 추가')}
+      ${callout(3,'사진 썸네일 — ✓완료 · ✗삭제 · ⬇️다운로드(원본 받기)')}
+      ${callout(4,'⚠️ 특이사항 추가 (사진+메모로 기록)')}
     </div>
   </div>`;
 }
 
-/* ── 슬라이드 4: 사진 찍기 ── */
+/* ── 슬라이드 4: 사진 정렬 · 순서 편집 (실제 캡쳐 + 번호 오버레이) ── */
 function renderSlideScreen3(c) {
   c.innerHTML = `
   <div class="ob-slide">
-    <div class="ob-slide-ttl">③ 사진 찍기 · 순서 편집</div>
-    <div class="ob-screen">
-      <div class="obs-photo-main">
-        <div class="obs-photo-col">
-          <div class="obs-plabel" style="color:#f06060;">🔴 작업 전</div>
-          <div class="obs-cam-row">
-            <div class="obs-btn obs-c-gray obs-btn-sm">📷 카메라</div>
-            <div class="obs-btn obs-c-gray obs-btn-sm">🖼️ 갤러리</div>
-          </div>
-          <div class="obs-thumbs obs-thumbs-lg">
-            <div class="obs-th obs-th-f obs-th-lg">📷<br><small>1</small></div>
-            <div class="obs-th obs-th-f obs-th-lg">📷<br><small>2</small></div>
-            <div class="obs-th obs-th-e obs-th-lg">＋</div>
-          </div>
-        </div>
-        <div class="obs-photo-col">
-          <div class="obs-plabel" style="color:#10b981;">🟢 작업 후</div>
-          <div class="obs-cam-row">
-            <div class="obs-btn obs-c-gray obs-btn-sm">📷 카메라</div>
-            <div class="obs-btn obs-c-gray obs-btn-sm">🖼️ 갤러리</div>
-          </div>
-          <div class="obs-thumbs obs-thumbs-lg">
-            <div class="obs-th obs-th-f obs-th-lg">📷<br><small>1</small></div>
-            <div class="obs-th obs-th-f obs-th-lg">📷<br><small>2</small></div>
-            <div class="obs-th obs-th-e obs-th-lg">＋</div>
-          </div>
-        </div>
-      </div>
-      <!-- 순서편집 미니 -->
-      <div class="obs-reorder-box">
-        <div class="obs-reorder-ttl">🔄 순서 편집 (드래그)</div>
-        <div class="obs-reorder-item"><span class="obs-ri-n">1</span><span class="obs-ri-ph">📷</span><span class="obs-ri-del">✕</span><span class="obs-ri-handle">≡</span></div>
-        <div class="obs-reorder-item"><span class="obs-ri-n">2</span><span class="obs-ri-ph">📷</span><span class="obs-ri-del">✕</span><span class="obs-ri-handle">≡</span></div>
-      </div>
-      <div class="obs-badges">
-        ${badge(1)}${badge(2)}${badge(3)}${badge(4)}
-      </div>
+    <div class="ob-slide-ttl">③ 사진 정렬 · 순서 편집</div>
+    <div class="ob-img-wrap">
+      <img src="./assets/onboarding/screen3_reorder.jpg" alt="사진 순서 편집">
+      <!-- ① 헤더 -->
+      <div class="ob-zone" style="top:0%;left:3%;width:94%;height:9%;"></div>
+      <div class="ob-pin" style="top:3%;left:7%;">1</div>
+      <!-- ② 안내문 -->
+      <div class="ob-zone" style="top:11%;left:3%;width:94%;height:10%;"></div>
+      <div class="ob-pin" style="top:14%;left:7%;">2</div>
+      <!-- ③ 사진 정렬 영역 (좌: 작업 전, 우: 작업 후) -->
+      <div class="ob-zone" style="top:23%;left:3%;width:94%;height:62%;"></div>
+      <div class="ob-pin" style="top:26%;left:7%;">3</div>
+      <!-- ④ 취소/저장 버튼 -->
+      <div class="ob-zone" style="top:87%;left:50%;width:47%;height:12%;"></div>
+      <div class="ob-pin" style="top:90%;left:54%;">4</div>
     </div>
     <div class="ob-callouts">
-      ${callout(1,'📷카메라로 바로 촬영 또는 🖼️갤러리에서 여러 장 선택')}
-      ${callout(2,'같은 번호끼리 보고서에서 짝이 돼요 (전1 ↔ 후1, 전2 ↔ 후2)')}
-      ${callout(3,'순서 편집 버튼 → ≡ 드래그로 순서 변경 / ✕로 삭제')}
-      ${callout(4,'사진을 탭하면 전체화면으로 크게 볼 수 있어요')}
+      ${callout(1,'호수의 🔄순서편집 버튼을 누르면 이 화면이 열려요')}
+      ${callout(2,'≡ 핸들을 드래그해서 순서 변경 · 사진을 탭하면 크게 보기')}
+      ${callout(3,'좌측 작업 전(🔴) / 우측 작업 후(🟢) — 같은 번호끼리 보고서에서 짝이 됨 (전1↔후1)')}
+      ${callout(4,'저장하면 새 순서가 적용 · 취소하면 원래 순서 유지')}
     </div>
   </div>`;
 }
 
-/* ── 슬라이드 5: 저장·새작업·작업기록 ── */
+/* ── 슬라이드 5: 작업 기록 (실제 캡쳐 + 번호 오버레이) ── */
 function renderSlideScreen4(c) {
   c.innerHTML = `
   <div class="ob-slide">
-    <div class="ob-slide-ttl">④ 저장 · 작업 기록</div>
-    <div class="ob-screen">
-      <div class="obs-save-row">
-        <div class="obs-btn obs-c-orange obs-btn-lg">🆕 새작업</div>
-        <div class="obs-btn obs-c-gold obs-btn-lg">💾 저장</div>
-      </div>
-      <div class="obs-history">
-        <div class="obs-hist-hdr">
-          <span style="font-weight:700;">📋 작업 기록</span>
-          <div class="obs-filter">
-            <span class="obs-ftag obs-ftag-on">오늘</span>
-            <span class="obs-ftag">3일</span>
-            <span class="obs-ftag">7일</span>
-            <span class="obs-ftag">전체</span>
-          </div>
-        </div>
-        <div class="obs-hcard">
-          <div class="obs-hcard-apt">지제더샵 3단지</div>
-          <div class="obs-hcard-sub">2026.05.11 · 6호수 · 24장</div>
-          <span class="obs-chip obs-chip-done" style="font-size:9px;margin-left:auto;">완료</span>
-        </div>
-        <div class="obs-hcard">
-          <div class="obs-hcard-apt" style="color:var(--mu);">📞 010-1234-5678 · 홍길동</div>
-          <div class="obs-hcard-sub">지제더샵 · 2회 방문</div>
-        </div>
-        <div class="obs-hcard">
-          <div class="obs-hcard-apt">○○ 어린이집</div>
-          <div class="obs-hcard-sub">2026.05.10 · 공용시설</div>
-        </div>
-      </div>
-      <div class="obs-badges">
-        ${badge(1)}${badge(2)}${badge(3)}${badge(4)}
-      </div>
+    <div class="ob-slide-ttl">④ 작업 기록 · 고객 관리</div>
+    <div class="ob-img-wrap">
+      <img src="./assets/onboarding/screen5_records.jpg" alt="작업 기록">
+      <!-- ① 통계 패널 -->
+      <div class="ob-zone" style="top:4%;left:3%;width:94%;height:16%;"></div>
+      <div class="ob-pin" style="top:7%;left:7%;">1</div>
+      <!-- ② 기간 필터 -->
+      <div class="ob-zone" style="top:20%;left:3%;width:94%;height:12%;"></div>
+      <div class="ob-pin" style="top:23%;left:7%;">2</div>
+      <!-- ③ 검색 + 작업 카드 목록 -->
+      <div class="ob-zone" style="top:35%;left:3%;width:94%;height:55%;"></div>
+      <div class="ob-pin" style="top:38%;left:7%;">3</div>
+      <!-- ④ 하단 버튼 (엑셀 파일 위치) -->
+      <div class="ob-zone" style="top:92%;left:38%;width:60%;height:6%;"></div>
+      <div class="ob-pin" style="top:95%;left:42%;">4</div>
     </div>
     <div class="ob-callouts">
-      ${callout(1,'💾저장: 폴더에 사진·작업정보 보관')}
-      ${callout(2,'🆕새작업: 현재 작업 자동저장 후 새 화면 시작')}
-      ${callout(3,'날짜별·고객별 과거 작업 기록 조회 (카드 탭하면 불러오기)')}
-      ${callout(4,'고객 전화번호로 방문 이력·재의뢰 여부 확인')}
+      ${callout(1,'전체 고객 수 · 재작업 건수 · 최근 30일 작업 통계')}
+      ${callout(2,'기간 변경 / 최근 3·7·30일로 빠르게 좁히기 (전체 X건 표시)')}
+      ${callout(3,'카드 탭 또는 📂열기로 작업 불러오기 · ✏️정보 수정 · 🗑️삭제')}
+      ${callout(4,'고객 데이터 엑셀 파일 위치 확인 (Excel·구글 시트로 열어보기)')}
     </div>
   </div>`;
 }
 
-/* ── 슬라이드 6: 보고서 ── */
+/* ── 슬라이드 6: 보고서 출력 (실제 캡쳐 + 번호 오버레이) ── */
 function renderSlideScreen5(c) {
   c.innerHTML = `
   <div class="ob-slide">
     <div class="ob-slide-ttl">⑤ 보고서 출력 · 공유</div>
-    <div class="ob-screen">
-      <div class="obs-save-row">
-        <div class="obs-btn obs-c-blue obs-btn-lg">📄 미리보기</div>
-        <div class="obs-btn obs-c-green obs-btn-lg">⬇️ PDF</div>
-        <div class="obs-btn obs-c-org2 obs-btn-lg">🖼️ JPG</div>
-      </div>
-      <div class="obs-report">
-        <div class="obs-rp-hdr">
-          <div style="font-weight:800;font-size:11px;">❄️ 에어컨 작업 보고서</div>
-          <div style="font-size:9px;color:var(--mu);">지제더샵 3단지 | 2026.05.11 | 담당: 배성철</div>
-        </div>
-        <!-- 커버 페이지 -->
-        <div class="obs-rp-cover">
-          <div class="obs-rp-cover-ttl">📋 작업 목록 (6호수)</div>
-          <div class="obs-rp-rows">
-            <div class="obs-rp-row"><span class="obs-rp-n">1</span>316동 602호<span class="obs-chip obs-chip-done" style="font-size:8px;margin-left:auto;">완료</span></div>
-            <div class="obs-rp-row"><span class="obs-rp-n">2</span>316동 603호<span class="obs-chip obs-chip-done" style="font-size:8px;margin-left:auto;">완료</span></div>
-            <div class="obs-rp-row"><span class="obs-rp-n">3</span>316동 604호 ⚠️<span class="obs-chip obs-chip-done" style="font-size:8px;margin-left:auto;">완료</span></div>
-          </div>
-        </div>
-        <!-- 상세 페이지 -->
-        <div class="obs-rp-detail">
-          <div class="obs-rp-unit-bar">❄️ 316동 602호 &nbsp;<small style="color:var(--mu);">1/6 · 전3장 · 후3장</small></div>
-          <div class="obs-rp-photo-cols">
-            <div class="obs-rp-pcol">
-              <div class="obs-rp-pcol-lbl" style="color:#f06060;">🔴 작업 전</div>
-              <div class="obs-rp-phs">
-                <div class="obs-rp-ph" style="background:#fde8e8;">전1</div>
-                <div class="obs-rp-ph" style="background:#fde8e8;">전2</div>
-                <div class="obs-rp-ph" style="background:#fde8e8;">전3</div>
-              </div>
-            </div>
-            <div class="obs-rp-pcol">
-              <div class="obs-rp-pcol-lbl" style="color:#10b981;">🟢 작업 후</div>
-              <div class="obs-rp-phs">
-                <div class="obs-rp-ph" style="background:#e8fde8;">후1</div>
-                <div class="obs-rp-ph" style="background:#e8fde8;">후2</div>
-                <div class="obs-rp-ph" style="background:#e8fde8;">후3</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- 특이사항 -->
-        <div class="obs-rp-special">
-          <span style="font-size:9px;font-weight:700;">⚠️ 특이사항 별도 페이지</span>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:3px;">
-            <div style="background:#fde8e8;border-radius:3px;padding:4px;font-size:8px;">📷 사진</div>
-            <div style="background:#fffbf0;border-radius:3px;padding:4px;font-size:8px;">📝 메모</div>
-          </div>
-        </div>
-      </div>
-      <div class="obs-badges">
-        ${badge(1)}${badge(2)}${badge(3)}${badge(4)}
-      </div>
+    <div class="ob-img-wrap">
+      <img src="./assets/onboarding/screen4_report.jpg" alt="보고서 미리보기">
+      <!-- ① 상단 툴바 -->
+      <div class="ob-zone" style="top:0%;left:1%;width:98%;height:9%;"></div>
+      <div class="ob-pin" style="top:3%;left:5%;">1</div>
+      <!-- ② 표지 본문 -->
+      <div class="ob-zone" style="top:14%;left:5%;width:90%;height:41%;"></div>
+      <div class="ob-pin" style="top:17%;left:9%;">2</div>
+      <!-- ③ 통계 + 작업 상세 목록 -->
+      <div class="ob-zone" style="top:57%;left:5%;width:90%;height:25%;"></div>
+      <div class="ob-pin" style="top:60%;left:9%;">3</div>
     </div>
     <div class="ob-callouts">
-      ${callout(1,'📄미리보기로 먼저 확인 후 PDF 또는 JPG로 저장')}
-      ${callout(2,'커버 페이지: 전체 작업 목록 + 특이사항 호수 표시')}
-      ${callout(3,'각 호수별 작업 전·후 사진이 짝지어 출력돼요')}
-      ${callout(4,'특이사항: 좌측 사진 + 우측 메모 별도 페이지')}
+      ${callout(1,'📄보고서 / ➖➕ 줌 / ⬇️PDF · 🖼️JPG 저장 / ❌ 닫기')}
+      ${callout(2,'표지: 회사 정보 · 작업 현장 · 작업일 · 담당자 · 완료 비율')}
+      ${callout(3,'통계 요약 + 호수별 작업 상세 목록 (총 사진/완료/특이사항)')}
+      ${callout(4,'각 호수별 페이지엔 작업 전·후 사진이 짝지어 출력 (좌:전 / 우:후)')}
+    </div>
+  </div>`;
+}
+
+/* ── 슬라이드 7: ⚙️ 설정 (실제 캡쳐 + 번호 오버레이) ── */
+function renderSlideScreen6(c) {
+  c.innerHTML = `
+  <div class="ob-slide">
+    <div class="ob-slide-ttl">⑥ ⚙️ 설정</div>
+    <div class="ob-img-wrap">
+      <img src="./assets/onboarding/screen6_settings.jpg" alt="설정 화면">
+      <!-- ① 업체 정보 -->
+      <div class="ob-zone" style="top:3%;left:2%;width:96%;height:16%;"></div>
+      <div class="ob-pin" style="top:6%;left:6%;">1</div>
+      <!-- ② 도구 모음 -->
+      <div class="ob-zone" style="top:20%;left:2%;width:96%;height:17%;"></div>
+      <div class="ob-pin" style="top:23%;left:6%;">2</div>
+      <!-- ③ 자동저장 폴더 -->
+      <div class="ob-zone" style="top:38%;left:2%;width:96%;height:17%;"></div>
+      <div class="ob-pin" style="top:41%;left:6%;">3</div>
+      <!-- ④ 외관 (테마/글자크기/언어) -->
+      <div class="ob-zone" style="top:55%;left:2%;width:96%;height:40%;"></div>
+      <div class="ob-pin" style="top:58%;left:6%;">4</div>
+    </div>
+    <div class="ob-callouts">
+      ${callout(1,'업체명·연락처·사업자번호 등 보고서에 표시될 정보 수정')}
+      ${callout(2,'초기 설정 다시 / 캐시 초기화(버튼 안 먹힐 때) / 작업기록 재생성 / 홈 화면에 앱 설치')}
+      ${callout(3,'자동저장 폴더 위치 확인 · 변경 · 해제 (사진과 작업 데이터 자동 저장)')}
+      ${callout(4,'테마(다크/라이트) · 보고서 디자인 · 글자 크기 · 언어 선택')}
     </div>
   </div>`;
 }
@@ -402,7 +290,7 @@ function renderSlideSetup(c) {
   const hasFolder = (typeof photoFolderHandle !== 'undefined' && photoFolderHandle);
   c.innerHTML = `
   <div class="ob-slide">
-    <div class="ob-slide-ttl">⑥ 업체 정보 설정</div>
+    <div class="ob-slide-ttl">⑦ 업체 정보 설정</div>
     <p class="ob-setup-sub">보고서에 표시될 정보를 입력해요<br><small style="color:var(--mu);">⚙️설정에서 언제든 변경 가능</small></p>
     <div class="ob-setup-form">
       <div class="ob-setup-icons">

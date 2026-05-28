@@ -12,8 +12,17 @@ function sessionAutoSave() {
   _autoSaveTimer = setTimeout(() => sessionAutoSaveNow(), 1500);
 }
 
-async function sessionAutoSaveNow() {
+async function sessionAutoSaveNow(opts) {
   clearTimeout(_autoSaveTimer);
+  // ★ 백그라운드 저장 중에는 세션 자동저장 차단 (1.234)
+  //   - newWork()가 이전 작업 데이터를 전역 변수에 일시 swap해서 백그라운드 저장
+  //   - 그 사이에 sessionAutoSaveNow가 돌면 이전 작업이 세션에 저장됨 → 앱 재실행 시 부활
+  //   - force: true면 가드 우회 (newWork 직후 빈 세션 강제 저장용)
+  const force = opts && opts.force === true;
+  if (!force && typeof window !== 'undefined' && window._isSavingInBackground) {
+    console.log('[세션저장] 백그라운드 저장 중 - 스킵');
+    return;
+  }
   try {
     const apt = document.getElementById('aptName')?.value || '';
     const date = document.getElementById('workDate')?.value || kstDateStr();
@@ -22,13 +31,34 @@ async function sessionAutoSaveNow() {
     const coTel = document.getElementById('coTel')?.value || '';
     const coDesc = document.getElementById('coDesc')?.value || '';
 
-    // ★ 빈 새 작업이면 저장 스킵 (apt/units 모두 비어있음)
+    // ★ 빈 새 작업이면 → 빈 객체로 명시적 저장 (이전 세션 덮어쓰기 위해)
+    //   - 이전엔 return으로 스킵했지만 그러면 이전 세션이 그대로 남아 앱 재실행 시 복원됨
+    //   - 빈 객체 + isEmpty:true 마커를 저장하면 startup의 wasEmpty 체크가 정상 작동
     const isEmptyNew = (!units || units.length === 0)
                     && !apt.trim()
                     && !currentWorkId
                     && !currentFolderName;
     if (isEmptyNew) {
-      return;  // 저장할 게 없음
+      // 명시적 빈 세션 저장
+      const emptyObj = {
+        saveId:      'session_data',
+        label:       '[세션-빈]',
+        apt: '', date: kstDateStr(), worker: '',
+        savedAt:     kstIsoString(),
+        companyName: coName,
+        companyTel:  coTel,
+        companyDesc: coDesc,
+        units:       [],
+        nid:         1,
+        workId:      '',
+        workType:    'household',
+        currentFolderName: null,
+        facilityCustomer: { phone: '', contact: '', address: '', memo: '' },
+        isEmpty:     true
+      };
+      try { await dbPut(emptyObj); } catch(e) {}
+      try { localStorage.setItem('ac_session_backup', JSON.stringify(emptyObj)); } catch(e) {}
+      return;
     }
 
     const obj = {
@@ -99,12 +129,38 @@ async function initPhotoFolder() {
     return;
   }
 
+  // ★ 저장소 영구화 요청 (앱 시작 시) - 안드로이드 storage pressure로 IndexedDB가 비워지는 것 방지
+  if (navigator.storage && navigator.storage.persist) {
+    try {
+      const alreadyPersisted = await navigator.storage.persisted();
+      if (!alreadyPersisted) {
+        const granted = await navigator.storage.persist();
+        console.log(`[저장소] 영구화 요청: ${granted ? '✅ 허용' : '⚠️ 거부 (PWA 설치 권장)'}`);
+      } else {
+        console.log('[저장소] 이미 영구화됨');
+      }
+    } catch(e) { console.warn('[저장소] persist 요청 실패:', e.message); }
+  }
+
   try {
     const handle = await settingsGet('photoFolderHandle');
     if (!handle) {
+      // ★ 진단: 폴더가 풀린 시점 추적
+      const wasSet = localStorage.getItem('lastFolderName');
+      if (wasSet) {
+        console.warn(`[저장폴더] ⚠️ 폴더 핸들이 사라짐! 이전 폴더명: "${wasSet}". IndexedDB가 비워졌을 가능성 (storage pressure 또는 시크릿모드).`);
+        localStorage.setItem('folderLostAt', new Date().toISOString());
+        // 사용자에게도 알림
+        setTimeout(() => {
+          showToast?.(`⚠️ "${wasSet}" 폴더 연결이 끊어졌습니다. 다시 설정해주세요.`, 'err');
+        }, 1500);
+      }
       updateFolderUI(null);
       return;
     }
+
+    // ★ 핸들 살아있음 표시 (다음 실행 때 진단용)
+    try { localStorage.setItem('lastFolderName', handle.name); } catch(e) {}
 
     photoFolderHandle = handle;
 
@@ -158,47 +214,10 @@ async function initPhotoFolder() {
     // 4단계: 자동 실패 → 사용자가 버튼 눌러야 함
     updateFolderUI(handle, 'prompt');
 
-    // ★ 사용자가 화면을 처음 터치할 때 자동 권한 복구 시도
-    const tryResumeOnFirstGesture = async () => {
-      if (!photoFolderHandle) return;
-      try {
-        const curPerm = await photoFolderHandle.queryPermission({ mode: 'readwrite' });
-        if (curPerm === 'granted') {
-          updateFolderUI(photoFolderHandle, 'granted');
-          // ★ 권한 OK → 작업기록 캐시 백그라운드 빌드
-          if (typeof scheduleBackgroundBuild === 'function') {
-            scheduleBackgroundBuild();
-          }
-          // ★ 인덱스 없으면 백그라운드 자동 생성
-          autoBuildIndexIfMissing();
-          return;
-        }
-        // 사용자 제스처 컨텍스트 안에서 권한 요청
-        const newPerm = await photoFolderHandle.requestPermission({ mode: 'readwrite' });
-        if (newPerm === 'granted') {
-          updateFolderUI(photoFolderHandle, 'granted');
-          showToast?.(`✅ ${photoFolderHandle.name} 폴더 연결됨`, 'ok');
-          // ★ 권한 받자마자 작업기록 캐시 백그라운드 빌드
-          if (typeof scheduleBackgroundBuild === 'function') {
-            scheduleBackgroundBuild();
-          }
-          // ★ 인덱스 없으면 백그라운드 자동 생성
-          autoBuildIndexIfMissing();
-          if (typeof maybeRunMigration === 'function') {
-            setTimeout(() => maybeRunMigration().catch(()=>{}), 500);
-          }
-        }
-      } catch(e) { /* 무시 */ }
-    };
-
-    // 첫 클릭/터치 한 번만 시도하고 리스너 제거
-    const onceHandler = () => {
-      document.removeEventListener('click', onceHandler);
-      document.removeEventListener('touchend', onceHandler);
-      tryResumeOnFirstGesture();
-    };
-    document.addEventListener('click', onceHandler, { once: true });
-    document.addEventListener('touchend', onceHandler, { once: true });
+    // ★ "첫 제스처에 자동 권한 복구" 로직 제거 (1.233):
+    //   - 사용자가 "작업기록" 버튼 누르면 첫 제스처 핸들러와 모달 자체가
+    //     동시에 requestPermission 호출 → 권한 팝업 두 번 뜸
+    //   - 폴더 사용 시점(작업기록 열기, 저장, 삭제 등)에서 각자 권한 요청하면 충분
   } catch(e) {
     console.warn('폴더 복원 실패:', e);
     updateFolderUI(null);
@@ -239,8 +258,63 @@ async function selectPhotoFolder() {
     const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
     photoFolderHandle = handle;
     await settingsPut('photoFolderHandle', handle);
+    // ★ 핸들 살아있음 표시 (진단용)
+    try { localStorage.setItem('lastFolderName', handle.name); } catch(e) {}
+    // ★ 저장소 영구화 즉시 요청 - 폴더 핸들 보호
+    if (navigator.storage && navigator.storage.persist) {
+      try {
+        const granted = await navigator.storage.persist();
+        if (granted) {
+          console.log('[저장소] ✅ 영구 저장 허용 - 폴더 핸들 안전');
+        } else {
+          console.warn('[저장소] ⚠️ 영구 저장 거부됨 - 홈 화면에 앱 설치 권장');
+        }
+      } catch(e) {}
+    }
+
+    // ★★★ 즉시 다시 읽어서 저장 검증 (안드로이드 Chrome silent fail 대응)
+    // settingsPut이 success를 반환해도 실제로는 저장 실패하는 케이스가 있음
+    let verifyOk = false;
+    try {
+      // 50ms 대기 - IDB 트랜잭션 완전 commit 보장
+      await new Promise(r => setTimeout(r, 100));
+      const readBack = await settingsGet('photoFolderHandle');
+      if (readBack && readBack.name === handle.name) {
+        verifyOk = true;
+        console.log(`[저장폴더] ✅ 저장 검증 성공: ${handle.name}`);
+      } else {
+        console.error(`[저장폴더] ❌ 저장 검증 실패! 읽어온 값:`, readBack);
+      }
+    } catch(e) {
+      console.error('[저장폴더] ❌ 저장 검증 중 오류:', e);
+    }
+
     updateFolderUI(handle, 'granted');
-    showToast(`✅ 폴더 설정 완료: ${handle.name}`, 'ok');
+
+    if (verifyOk) {
+      showToast(`✅ 폴더 설정 완료: ${handle.name}`, 'ok');
+    } else {
+      // 저장 실패한 케이스 - 사용자에게 강하게 알림
+      showToast(`⚠️ 폴더 핸들 저장 실패! 앱을 닫으면 사라집니다`, 'err');
+      // 진단 정보 localStorage에 기록
+      try {
+        localStorage.setItem('saveFolderFailedAt', new Date().toISOString());
+        localStorage.setItem('saveFolderFailedName', handle.name);
+      } catch(e) {}
+      setTimeout(() => {
+        alert(
+          '⚠️ 저장폴더 정보를 IndexedDB에 저장하지 못했습니다.\n\n' +
+          '가능한 원인:\n' +
+          '1. 안드로이드 Chrome 일부 버전의 알려진 버그\n' +
+          '2. SD카드/외장 저장소 폴더 (제한됨)\n' +
+          '3. 시크릿모드/임시 세션\n\n' +
+          '해결 방법:\n' +
+          '• 내장 저장소 폴더로 다시 선택 (Download 등)\n' +
+          '• 시크릿 모드 끄고 일반 모드로 사용\n' +
+          '• Chrome 최신 버전 업데이트'
+        );
+      }, 500);
+    }
     // 고객 캐시 무효화 - 새 폴더에서 다시 로드
     if (typeof invalidateCustomersCache === 'function') invalidateCustomersCache();
     if (typeof initCustomersCache === 'function') initCustomersCache().catch(()=>{});
@@ -464,10 +538,15 @@ async function getCachedWorkDir(dateFolderName, workNum) {
 }
 
 async function doWriteOne(photo, unitName, typeLabel) {
-  // saveToFolder가 설정한 폴더명 우선, 없으면 기본 날짜
-  const dateFolderName = _currentSaveDateFolderName ||
-                         document.getElementById('workDate').value ||
-                         getLocalDateStr();
+  // saveToFolder가 설정한 폴더명 우선
+  // fallback도 항상 YYYY-MM-DD_HHMM 형식으로 (날짜만 들어가는 일 방지)
+  let dateFolderName = _currentSaveDateFolderName;
+  if (!dateFolderName) {
+    const dateOnly = document.getElementById('workDate').value || getLocalDateStr();
+    const timeStr = (typeof localTimeStr === 'function') ? localTimeStr() : '0000';
+    dateFolderName = `${dateOnly}_${timeStr}`;
+    console.warn('⚠️ doWriteOne fallback - 폴더명 생성:', dateFolderName);
+  }
 
   let step = 'init';
   try {
@@ -537,7 +616,7 @@ async function doWriteOne(photo, unitName, typeLabel) {
 
 // ★ 썸네일을 백그라운드에서 _thumbs 폴더에 저장 + photo 객체에 dataUrl 보관
 async function saveThumbnailInBackground(workDir, fname, originalBlob, photo) {
-  // ★ 테스트: 썸네일 비활성화 시 즉시 종료
+  // 썸네일 비활성화 시 즉시 종료
   if (typeof window !== 'undefined' && window.THUMBNAILS_ENABLED === false) return;
   if (typeof createThumbnailBlob !== 'function') return;
   try {

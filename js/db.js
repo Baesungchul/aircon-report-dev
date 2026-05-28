@@ -9,6 +9,28 @@ const CUSTOMER_STORE = 'customers';
 let   db      = null;
 let   photoFolderHandle = null;   // 저장 폴더 핸들 (메모리 캐시)
 
+// ★ 권한 요청 동시성 가드 (1.233): 같은 권한 요청이 동시에 호출되면
+// 두 번째 호출은 첫 번째 결과를 기다림 → 팝업 두 번 뜨는 것 방지
+let _pendingPermRequest = null;
+async function requestFolderPermissionSafe(mode) {
+  if (!photoFolderHandle) return 'prompt';
+  // 이미 진행 중인 요청이 있으면 그 결과 기다림
+  if (_pendingPermRequest) {
+    try { return await _pendingPermRequest; } catch(e) { return 'prompt'; }
+  }
+  // 새 요청 시작
+  _pendingPermRequest = photoFolderHandle.requestPermission({ mode: mode || 'readwrite' });
+  try {
+    const result = await _pendingPermRequest;
+    return result;
+  } finally {
+    _pendingPermRequest = null;
+  }
+}
+if (typeof window !== 'undefined') {
+  window.requestFolderPermissionSafe = requestFolderPermissionSafe;
+}
+
 function openDB() {
   return new Promise((res, rej) => {
     if (db) {

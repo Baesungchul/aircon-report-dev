@@ -11,7 +11,7 @@ const _pendingThumbGen = [];
 let _thumbGenInProgress = false;
 
 async function processPendingThumbGen() {
-  // ★ 테스트: 썸네일 비활성화 시 큐 비우고 종료
+  // 썸네일 비활성화 시 큐 비우고 종료
   if (typeof window !== 'undefined' && window.THUMBNAILS_ENABLED === false) {
     _pendingThumbGen.length = 0;
     return;
@@ -376,10 +376,8 @@ async function saveToFolder(opts) {
         if (typeof flushAllCustomers === 'function') {
           await flushAllCustomers();
         }
-        // customers.xlsx도 즉시 쓰기
-        if (typeof flushCustomersXlsx === 'function') {
-          await flushCustomersXlsx();
-        }
+        // ★ A안: customers.xlsx는 동기 await 안 함 - 저장 속도 우선
+        //    뒤쪽 디바운스 큐가 백그라운드에서 처리 (line 426)
       } catch(e) { console.warn('고객 저장 실패:', e); }
     } else {
       console.error('❌ 모든 시도 실패. 마지막 에러:', lastError);
@@ -911,6 +909,11 @@ async function deleteDateFolder(target) {
     if (typeof invalidateCustomersV2 === 'function') invalidateCustomersV2();
     if (typeof invalidateCustomersCache === 'function') invalidateCustomersCache();
 
+    // ★ 현재 화면이 삭제한 작업이면 화면도 초기화 (앱 재시작 시 부활 방지)
+    if (typeof clearIfCurrent === 'function') {
+      await clearIfCurrent(target.name);
+    }
+
     showToast(`✓ "${apt}" 삭제됨`, 'ok');
 
     // 목록 새로고침
@@ -1077,14 +1080,25 @@ async function loadWorkFromFile(file) {
 // 날짜 폴더에서 작업 복원 (목록에서 선택한 경우)
 async function loadFromDateFolder(dateDir, data) {
   // 현재 작업과 같으면 그냥 닫기 (모든 모달 닫기)
+  // ★ workId 우선 비교 - 같은 apt+date라도 workId 다르면 다른 작업
+  //   (이전: apt+date만 비교 → 같은 날 같은 아파트의 다른 호수 작업이 "이미 현재 작업"으로 잘못 판정되어 안 열림)
   try {
-    const curApt = (document.getElementById('aptName').value || '').trim();
-    const curDate = (document.getElementById('workDate').value || '').trim();
-    if (curApt === (data.apt || '').trim() && curDate === (data.date || '').trim()) {
+    if (data.workId && currentWorkId && data.workId === currentWorkId) {
       document.getElementById('slModal')?.classList.remove('open');
       document.getElementById('customerModal')?.classList.remove('open');
       showToast('이미 현재 작업입니다', 'ok');
       return;
+    }
+    // workId가 양쪽 다 없을 때만 apt+date 폴백
+    if (!data.workId && !currentWorkId) {
+      const curApt = (document.getElementById('aptName').value || '').trim();
+      const curDate = (document.getElementById('workDate').value || '').trim();
+      if (curApt === (data.apt || '').trim() && curDate === (data.date || '').trim()) {
+        document.getElementById('slModal')?.classList.remove('open');
+        document.getElementById('customerModal')?.classList.remove('open');
+        showToast('이미 현재 작업입니다', 'ok');
+        return;
+      }
     }
   } catch(e) {}
 
@@ -1169,39 +1183,11 @@ async function restoreFromData(data, dateDir) {
     dirs.forEach(d => { if (d) workDirMap.set(d.ui, d.handle); });
   }
 
-  // ★ customers DB 역조회는 호수 중 phone 없는 게 있을 때만 (대부분 스킵)
+  // ★ customers DB 역조회 제거 (1.239) - 너무 무거움 (열기 12~20초 원인)
+  //   - 작업 불러올 때마다 전체 고객 DB 로드 + visits 순회는 비효율적
+  //   - 호수에 phone이 저장돼 있으면 그대로 사용, 없으면 빈값
+  //   - 사용자가 명시적으로 입력 안 한 정보를 자동 추론하는 것보다 빠른 게 낫다
   let customersByUnit = new Map();
-  if (currentWorkType !== 'facility') {
-    const needsLookup = (data.units || []).some(u => {
-      const phone = (u.customer?.phone || '').trim();
-      return !phone;  // phone 비어있는 호수가 하나라도 있으면 조회 필요
-    });
-
-    if (needsLookup) {
-      try {
-        if (typeof customerListAll === 'function') {
-          const allCustomers = await customerListAll();
-          const apt = data.apt || '';
-          allCustomers.forEach(c => {
-            (c.visits || []).forEach(v => {
-              if (v.apt === apt && v.unit) {
-                const key = `${apt}::${v.unit}`;
-                const existing = customersByUnit.get(key);
-                if (!existing || (c.lastVisit || '') > (existing.lastVisit || '')) {
-                  customersByUnit.set(key, c);
-                }
-              }
-            });
-          });
-          if (customersByUnit.size > 0) {
-            console.log(`[Load] customers DB에서 ${customersByUnit.size}개 호수 매칭`);
-          }
-        }
-      } catch(e) { console.warn('customers 역조회 실패:', e); }
-    } else {
-      console.log('[Load] 모든 호수에 phone 있음 → customers DB 조회 스킵');
-    }
-  }
 
   for (let ui = 0; ui < data.units.length; ui++) {
     const u = data.units[ui];
@@ -1258,7 +1244,7 @@ async function restoreFromData(data, dateDir) {
         const workDir = workDirMap.get(ui) || null;
 
         // 메타에서 사진 객체 생성 (썸네일은 즉시 사용 + 원본은 lazy)
-        // ★ 테스트: 썸네일 비활성화 시 meta.thumb 무시 (공정 비교)
+        // 썸네일 비활성화 시 meta.thumb 무시
         const thumbsOn = !(typeof window !== 'undefined' && window.THUMBNAILS_ENABLED === false);
         const buildFromMeta = (meta) => {
           if (!meta) return null;
@@ -1333,7 +1319,7 @@ async function restoreFromData(data, dateDir) {
 
         // ★ 썸네일 폴더 핸들 가져오기 (있을 수도 없을 수도)
         let thumbsDir = null;
-        // ★ 테스트: 썸네일 비활성화 시 _thumbs 폴더 자체를 사용하지 않음 (공정한 비교)
+        // 썸네일 비활성화 시 _thumbs 폴더 자체를 사용하지 않음
         if (typeof window !== 'undefined' && window.THUMBNAILS_ENABLED === false) {
           thumbsDir = null;
         } else {
@@ -1537,8 +1523,6 @@ function photoId() {
 
 // 폴더에서 세션 목록 읽기
 async function doLoad(saveId) {
-  // ★ 성능 측정 시작 (썸네일 ON/OFF 비교용)
-  const _loadStartT = performance.now();
   // 현재 작업이 있고 저장 안 된 경우 - 저장 확인
   if (units.length > 0) {
     if (typeof _dataDirty !== 'undefined' && _dataDirty) {
@@ -1600,10 +1584,7 @@ async function doLoad(saveId) {
     renderAll(); updateStats();
     document.getElementById('slModal').classList.remove('open');
     hideOverlay();
-    // ★ 성능 측정 결과 표시 (썸네일 ON/OFF 비교용)
-    const _loadMs = Math.round(performance.now() - _loadStartT);
-    const _mode = (window.THUMBNAILS_ENABLED === false) ? '썸네일OFF' : '썸네일ON';
-    showToast(`"${s.label}" 불러오기 완료 · ${_loadMs}ms (${_mode})`,'ok');
+    showToast(`"${s.label}" 불러오기 완료`,'ok');
   } catch(e) {
     hideOverlay(); showToast('불러오기 실패: '+e.message,'err');
   }
@@ -1864,7 +1845,7 @@ function openReorderModal(unitId, side) {
     return;
   }
 
-  if (u.before.length < 2 && u.after.length < 2) {
+  if ((u.before.length + u.after.length) < 2) {
     showToast('순서 편집은 사진이 2장 이상일 때 가능합니다', 'err');
     return;
   }
@@ -1914,7 +1895,7 @@ function renderReorderList() {
 
   body.innerHTML = `
     <div class="reorder-info">
-      ☰ 드래그로 순서 변경 · 사진 탭하면 크게 보기
+      ☰ 드래그로 순서 변경 · 작업 전↔후 이동 가능 · 사진 탭하면 크게 보기
     </div>
     <div class="reorder-cols">
       ${colHtml(before, 'before', '🔴 작업 전', '#f06060')}
@@ -1955,6 +1936,7 @@ function bindReorderDrag(body) {
   let drag = null;  // 드래그 상태
   let rafId = null; // requestAnimationFrame ID
   let pendingY = 0; // 최신 Y 좌표
+  let pendingX = 0; // 최신 X 좌표 (cross-column 판단용)
 
   // ── 고스트 생성 ──
   function createGhost(el) {
@@ -1980,13 +1962,33 @@ function bindReorderDrag(body) {
       willChange: 'top',
     });
     document.body.appendChild(g);
-    return { el: g, baseTop: r.top };
+    return { el: g, baseTop: r.top, baseLeft: r.left };
+  }
+
+  // ── 포인터가 어느 컬럼(side) 위에 있는지 판단 ──
+  function getSideAt(clientX, clientY) {
+    // 각 컬럼의 영역으로 판단
+    const cols = [...body.querySelectorAll('.reorder-col')];
+    for (const col of cols) {
+      const r = col.getBoundingClientRect();
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+        return col.dataset.side;
+      }
+    }
+    // 영역 밖이면 X좌표로만 판단 (좌=before, 우=after)
+    const colsR = cols.map(c => c.getBoundingClientRect());
+    if (colsR.length === 2) {
+      const mid = (colsR[0].right + colsR[1].left) / 2;
+      return clientX < mid ? 'before' : 'after';
+    }
+    return null;
   }
 
   // ── 모든 항목의 중간 Y 계산 ──
   function getDropIndex(side, clientY) {
     const items = [...body.querySelectorAll(`.reorder-item[data-side="${side}"]`)];
-    let idx = items.length - 1;
+    if (items.length === 0) return 0;
+    let idx = items.length;  // 기본: 맨 끝
     for (let i = 0; i < items.length; i++) {
       const r = items[i].getBoundingClientRect();
       if (clientY < r.top + r.height / 2) { idx = i; break; }
@@ -1996,10 +1998,15 @@ function bindReorderDrag(body) {
 
   // ── 드롭 강조 갱신 ──
   function updateHighlight(side, dropIdx) {
-    body.querySelectorAll('.reorder-item').forEach((el, i) => {
+    body.querySelectorAll('.reorder-item').forEach((el) => {
       const isSide = el.dataset.side === side;
-      const isTarget = isSide && parseInt(el.dataset.idx) === dropIdx && dropIdx !== drag.fromIdx;
+      const isTarget = isSide && parseInt(el.dataset.idx) === dropIdx && !(side === drag.side && dropIdx === drag.fromIdx);
       el.classList.toggle('reorder-over', isTarget);
+    });
+    // ★ 다른 컬럼으로 이동 중이면 그 컬럼 전체 강조
+    body.querySelectorAll('.reorder-col').forEach(col => {
+      const crossing = (side !== drag.side) && (col.dataset.side === side);
+      col.classList.toggle('reorder-col-target', crossing);
     });
   }
 
@@ -2007,11 +2014,16 @@ function bindReorderDrag(body) {
   function rafLoop() {
     if (!drag) return;
     const dy = pendingY - drag.startY;
-    drag.ghost.el.style.top = (drag.ghost.baseTop + dy) + 'px';
-    const dropIdx = getDropIndex(drag.side, pendingY);
-    if (dropIdx !== drag.lastDropIdx) {
+    const dx = pendingX - drag.startX;
+    drag.ghost.el.style.top  = (drag.ghost.baseTop  + dy) + 'px';
+    drag.ghost.el.style.left = (drag.ghost.baseLeft + dx) + 'px';
+    // ★ 현재 포인터가 위치한 컬럼 판단 (cross-column 지원)
+    const curSide = getSideAt(pendingX, pendingY) || drag.side;
+    const dropIdx = getDropIndex(curSide, pendingY);
+    if (curSide !== drag.curSide || dropIdx !== drag.lastDropIdx) {
+      drag.curSide = curSide;
       drag.lastDropIdx = dropIdx;
-      updateHighlight(drag.side, dropIdx);
+      updateHighlight(curSide, dropIdx);
     }
     rafId = requestAnimationFrame(rafLoop);
   }
@@ -2031,18 +2043,22 @@ function bindReorderDrag(body) {
     }
 
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const ghost = createGhost(item);
     item.classList.add('reorder-dragging');
 
     drag = {
       side:        item.dataset.side,
+      curSide:     item.dataset.side,
       fromIdx:     parseInt(item.dataset.idx),
       el:          item,
       ghost,
       startY:      clientY,
+      startX:      clientX,
       lastDropIdx: parseInt(item.dataset.idx),
     };
     pendingY = clientY;
+    pendingX = clientX;
     rafId = requestAnimationFrame(rafLoop);
   }
 
@@ -2051,6 +2067,7 @@ function bindReorderDrag(body) {
     if (!drag) return;
     e.preventDefault();
     pendingY = e.touches ? e.touches[0].clientY : e.clientY;
+    pendingX = e.touches ? e.touches[0].clientX : e.clientX;
   }
 
   // ── 종료 ──
@@ -2063,16 +2080,39 @@ function bindReorderDrag(body) {
     drag.ghost.el.remove();
     drag.el.classList.remove('reorder-dragging');
     body.querySelectorAll('.reorder-over').forEach(el => el.classList.remove('reorder-over'));
+    body.querySelectorAll('.reorder-col-target').forEach(el => el.classList.remove('reorder-col-target'));
 
-    const dropIdx = drag.lastDropIdx;
-    const fromIdx = drag.fromIdx;
+    const dropIdx  = drag.lastDropIdx;
+    const fromIdx  = drag.fromIdx;
+    const fromSide = drag.side;
+    const toSide   = drag.curSide || drag.side;
 
-    if (dropIdx !== fromIdx) {
-      const photos = _reorderState[drag.side];
-      const [moved] = photos.splice(fromIdx, 1);
-      photos.splice(dropIdx, 0, moved);
-      photos.forEach(p => { p.savedToFolder = false; });
-      renderReorderList();
+    if (fromSide === toSide) {
+      // 같은 컬럼 내 순서 변경
+      if (dropIdx !== fromIdx) {
+        const photos = _reorderState[fromSide];
+        const [moved] = photos.splice(fromIdx, 1);
+        // dropIdx는 splice 전 기준 인덱스 → 빠진 후 보정
+        const insertAt = dropIdx > fromIdx ? dropIdx - 1 : dropIdx;
+        photos.splice(Math.max(0, Math.min(insertAt, photos.length)), 0, moved);
+        photos.forEach(p => { p.savedToFolder = false; });
+        renderReorderList();
+      }
+    } else {
+      // ★ 다른 컬럼으로 이동 (작업 전 ↔ 작업 후)
+      const fromArr = _reorderState[fromSide];
+      const toArr   = _reorderState[toSide];
+      const [moved] = fromArr.splice(fromIdx, 1);
+      if (moved) {
+        const insertAt = Math.min(dropIdx, toArr.length);
+        toArr.splice(insertAt, 0, moved);
+        // 이동된 사진은 새 위치에 다시 저장돼야 함
+        moved.savedToFolder = false;
+        fromArr.forEach(p => { p.savedToFolder = false; });
+        toArr.forEach(p => { p.savedToFolder = false; });
+        renderReorderList();
+        showToast(`${fromSide === 'before' ? '작업 전→후' : '작업 후→전'} 이동`, 'ok');
+      }
     }
 
     drag = null;

@@ -166,3 +166,104 @@ window.addEventListener('appinstalled', () => {
   if (btn) btn.style.display = 'none';
   if (hint) hint.style.display = 'none';
 });
+
+// ═══════════════════════════════════════════════
+// 저장소 상태 진단 - 폴더가 풀리는 원인 추적용
+// ═══════════════════════════════════════════════
+window.showStorageDiagnostics = async function() {
+  const lines = ['📊 저장소 상태 진단', '═══════════════════', ''];
+
+  // 1) PWA 모드 여부
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true;
+  lines.push(`📱 PWA 모드: ${isStandalone ? '✅ 예 (standalone)' : '❌ 아니오 (브라우저 탭)'}`);
+
+  // 2) 영구 저장 권한
+  let persisted = '확인 불가';
+  if (navigator.storage && navigator.storage.persisted) {
+    try {
+      persisted = await navigator.storage.persisted() ? '✅ 허용됨' : '⚠️ 거부됨';
+    } catch(e) { persisted = 'API 오류: ' + e.message; }
+  }
+  lines.push(`🔒 영구 저장: ${persisted}`);
+
+  // 3) 저장소 용량
+  if (navigator.storage && navigator.storage.estimate) {
+    try {
+      const est = await navigator.storage.estimate();
+      const usedMB = (est.usage / 1024 / 1024).toFixed(1);
+      const quotaMB = (est.quota / 1024 / 1024).toFixed(0);
+      const pct = ((est.usage / est.quota) * 100).toFixed(1);
+      lines.push(`💾 사용량: ${usedMB} MB / ${quotaMB} MB (${pct}%)`);
+    } catch(e) {}
+  }
+
+  // 4) 현재 폴더 핸들
+  lines.push('');
+  lines.push('━━━ 저장 폴더 상태 ━━━');
+  if (typeof photoFolderHandle !== 'undefined' && photoFolderHandle) {
+    lines.push(`📁 현재 폴더: ${photoFolderHandle.name}`);
+    try {
+      const perm = await photoFolderHandle.queryPermission({ mode: 'readwrite' });
+      lines.push(`   권한: ${perm === 'granted' ? '✅' : '⚠️'} ${perm}`);
+    } catch(e) {}
+  } else {
+    lines.push('📁 현재 폴더: ❌ 없음');
+  }
+
+  // 5) IndexedDB에 핸들 있는지 직접 확인
+  try {
+    const dbHandle = await settingsGet('photoFolderHandle');
+    if (dbHandle) {
+      lines.push(`💿 IndexedDB 저장: ✅ "${dbHandle.name}"`);
+    } else {
+      lines.push(`💿 IndexedDB 저장: ❌ 없음`);
+    }
+  } catch(e) {
+    lines.push(`💿 IndexedDB 저장: 오류 - ${e.message}`);
+  }
+
+  // 6) 마지막 손실 기록
+  lines.push('');
+  lines.push('━━━ 진단 이력 ━━━');
+  const lastName = localStorage.getItem('lastFolderName');
+  if (lastName) lines.push(`🔖 마지막 폴더명 (메모): ${lastName}`);
+  const lostAt = localStorage.getItem('folderLostAt');
+  if (lostAt) lines.push(`🔴 마지막 손실 시각: ${lostAt}`);
+  const failedAt = localStorage.getItem('saveFolderFailedAt');
+  if (failedAt) {
+    const failedName = localStorage.getItem('saveFolderFailedName');
+    lines.push(`🔴 마지막 저장 실패: ${failedAt}`);
+    if (failedName) lines.push(`   폴더명: ${failedName}`);
+  }
+
+  // 7) Chrome 버전
+  lines.push('');
+  lines.push('━━━ 환경 ━━━');
+  lines.push(`🌐 UA: ${navigator.userAgent.substring(0, 100)}...`);
+
+  // 8) 가이드
+  lines.push('');
+  lines.push('━━━ 진단 가이드 ━━━');
+  if (!isStandalone) {
+    lines.push('⚠️ PWA로 설치 안 됨 → 폴더 풀림 위험 높음');
+    lines.push('  → 설정 → 홈 화면에 앱 설치');
+  }
+  if (persisted.includes('거부')) {
+    lines.push('⚠️ 영구 저장 거부됨 → 안드로이드가 데이터 정리할 수 있음');
+    lines.push('  → 폴더 다시 설정하면 재요청 됨');
+  }
+
+  const text = lines.join('\n');
+  console.log(text);
+
+  // 화면에 alert로 보여주기 (모바일에서 콘솔 보기 어려움)
+  if (confirm(text + '\n\n클립보드에 복사할까요?')) {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('✅ 진단 정보 복사됨', 'ok');
+    } catch(e) {
+      showToast('복사 실패 - 직접 메모해주세요', 'err');
+    }
+  }
+};

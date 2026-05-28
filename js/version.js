@@ -6,24 +6,13 @@
    - 메이저 업데이트: 2.0
 ═══════════════════════════════════════════════ */
 
-const APP_VERSION = '1.215-NOTHUMB';
-const APP_VERSION_DATE = '2026-05-21';
+const APP_VERSION = '1.244';
+const APP_VERSION_DATE = '2026-05-28';
 
 // 버전 표시 갱신 함수
 function applyAppVersion() {
   const el = document.getElementById('appVersion');
-  if (el) {
-    el.textContent = `v${APP_VERSION}`;
-    el.style.color = '#ff9a3c';
-    el.style.fontWeight = '700';
-    el.title = '테스트 버전: 썸네일 생성 비활성화';
-  }
-  // 시작 시 한 번 토스트로 알림 (어떤 버전인지 명확히 보이게)
-  setTimeout(() => {
-    if (typeof showToast === 'function') {
-      showToast('⚠️ 테스트 버전: 썸네일 OFF', 'ok');
-    }
-  }, 800);
+  if (el) el.textContent = `v${APP_VERSION}`;
 }
 
 if (typeof window !== 'undefined') {

@@ -73,16 +73,19 @@ function compressImage(file) {
 const THUMB_MAX_PX = 300;       // 썸네일 최대 크기
 const THUMB_QUALITY = 0.65;     // 썸네일 품질 (작아도 충분)
 
-// ★★★ 테스트 모드: 썸네일 비활성화 ★★★
-// 썸네일 시스템 성능 영향 측정용. true로 되돌리면 정상 동작.
+// ═══════════════════════════════════════════════
+// 썸네일 시스템 사용 여부
+// - 1.215 비교 테스트 결과 ON/OFF 체감 차이 거의 없음 → OFF로 유지
+// - 향후 디바이스/사진수 따라 재검토하고 싶으면 true로만 바꾸면 부활
+// ═══════════════════════════════════════════════
 const THUMBNAILS_ENABLED = false;
 if (typeof window !== 'undefined') window.THUMBNAILS_ENABLED = THUMBNAILS_ENABLED;
 
 // File/Blob → 썸네일 Blob (JPEG)
 function createThumbnailBlob(file) {
-  // ★ 테스트: 비활성화 시 즉시 거부
+  // 비활성화 시 즉시 거부 (호출 측 catch에서 무시됨)
   if (!THUMBNAILS_ENABLED) {
-    return Promise.reject(new Error('썸네일 비활성화됨 (테스트)'));
+    return Promise.reject(new Error('썸네일 시스템 비활성화'));
   }
   return new Promise((resolve, reject) => {
     const img = new Image();

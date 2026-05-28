@@ -90,12 +90,12 @@ async function openCustomerModal() {
   document.getElementById('customerModal').classList.add('open');
   _customerSearch = '';
 
-  // 권한 먼저 확보
+  // 권한 먼저 확보 (싱글톤 가드 사용 - 동시 호출 시 한 팝업만)
   if (photoFolderHandle) {
     try {
       let perm = await photoFolderHandle.queryPermission({ mode: 'readwrite' });
       if (perm !== 'granted') {
-        perm = await photoFolderHandle.requestPermission({ mode: 'readwrite' });
+        perm = await requestFolderPermissionSafe('readwrite');
       }
       if (perm !== 'granted') {
         showToast('폴더 권한이 필요합니다', 'err');
@@ -105,12 +105,24 @@ async function openCustomerModal() {
     }
   }
 
-  // ★ 모달 열 때마다 캐시 무효화 - 항상 신선한 데이터
-  // (작업 저장/삭제 직후 변경사항 즉시 반영)
-  if (typeof invalidateRecordsCache === 'function') invalidateRecordsCache();
-  if (typeof invalidateCustomersV2 === 'function') invalidateCustomersV2();
+  // ★ 모달 열 때마다 기본 3일로 리셋 (사용자 요구사항)
+  // - 전체 보고 닫았다가 다시 열어도 3일 보여줌
+  // - 캐시는 그대로 유지 (전체 데이터 메모리에 있으면 "전체" 선택 시 즉시 표시)
+  _customerUseDefault = true;
+  _customerDateFrom = null;
+  _customerDateTo = null;
+  saveCustomerFilter();  // localStorage에도 반영 (앱 재시작 후도 3일)
+
+  // ★ 모달 열 때 캐시 정책:
+  // - 캐시 있으면 그대로 사용 (필터링은 renderCustomerList에서)
+  // - 캐시 없으면 3일치만 빠르게 로드 → 표시 → 백그라운드 전체 빌드
 
   await renderCustomerList();
+
+  // 렌더 후 백그라운드에서 전체 데이터 미리 빌드 (다음 "전체" 보기 시 즉시 표시)
+  if (typeof scheduleBackgroundBuild === 'function') {
+    scheduleBackgroundBuild();
+  }
 }
 
 function closeCustomerModal() {
@@ -137,24 +149,25 @@ function getDefaultDateTo() {
 //   - 중복 제거: 같은 작업이 customer.visits에 있으면 작업 카드는 생략
 // 반환: [{ type: 'customer'|'work', sortDate, data }, ...]
 // ════════════════════════════════════════
-async function loadCombinedRecords() {
+async function loadCombinedRecords(opts) {
   const T0 = Date.now();
-  console.log('[⏱️] loadCombinedRecords 시작');
+  // ★ opts.allDates === true이면 전역 필터 무시하고 전체 로드 (백그라운드 빌드용)
+  // 기본은 전역 사용자 필터 사용
+  const forceAll = opts && opts.allDates === true;
+  console.log('[⏱️] loadCombinedRecords 시작' + (forceAll ? ' (전체)' : ''));
 
   const items = [];
   const customerWorkIds = new Set();
   const customerAptDateKeys = new Set();
 
-  // ★ 폴더 권한 보장 (V2는 _session.json 스캔이 필수)
+  // ★ 폴더 권한 체크 (호출자가 이미 요청했어야 함 - 중복 팝업 방지)
+  // openCustomerModal에서 readwrite 권한을 미리 받으므로 여기선 query만
   if (photoFolderHandle) {
     try {
-      let perm = await photoFolderHandle.queryPermission({ mode: 'read' });
+      const perm = await photoFolderHandle.queryPermission({ mode: 'read' });
       if (perm !== 'granted') {
-        perm = await photoFolderHandle.requestPermission({ mode: 'read' });
-        if (perm !== 'granted') {
-          // 권한 없으면 안내 (작업 카드는 표시 못 함)
-          showToast('폴더 권한이 필요합니다', 'err');
-        }
+        // 권한 없으면 안내만 (요청은 호출자 책임)
+        showToast('폴더 권한이 필요합니다', 'err');
       }
     } catch(e) { console.warn('[작업기록] 권한 체크 실패:', e); }
   }
@@ -191,20 +204,32 @@ async function loadCombinedRecords() {
 
       // 각 그룹마다 카드 생성
       visitsByGroup.forEach((groupVisits, groupKey) => {
-        // ★ savedAt 우선 (시간까지 포함), 없으면 date
+        // ★ 정렬 키: 폴더명(작업 날짜+시간) 우선 → savedAt(저장시간) → date(날짜만)
+        // 폴더명 형식: YYYY-MM-DD_HHMM → ISO 비교 가능하도록 정규화
+        const visitSortKey = (v) => {
+          // ★ V2 visit은 sourceFolderName, 일반은 folderName/folder - 모두 확인
+          const fn = v.sourceFolderName || v.folderName || v.folder || '';
+          if (fn) {
+            // YYYY-MM-DD_HHMM → "YYYY-MM-DDTHH:MM" (ISO-like for lexicographic compare)
+            const m = fn.match(/^(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})/);
+            if (m) return `${m[1]}T${m[2]}:${m[3]}`;
+            // 날짜만 있는 옛날 폴더는 그대로
+            if (/^\d{4}-\d{2}-\d{2}$/.test(fn)) return `${fn}T00:00`;
+          }
+          // 폴더명 없거나 형식 안 맞으면 savedAt 또는 date
+          return v.savedAt || v.date || '';
+        };
         const sortedVisits = [...groupVisits].sort((a, b) => {
-          const aKey = a.savedAt || a.date || '';
-          const bKey = b.savedAt || b.date || '';
-          return bKey.localeCompare(aKey);
+          return visitSortKey(b).localeCompare(visitSortKey(a));
         });
         const lastVisit = sortedVisits[0]?.date || '';
-        const lastSortKey = sortedVisits[0]?.savedAt || lastVisit;
+        const lastSortKey = visitSortKey(sortedVisits[0] || {});
         const apt = sortedVisits[0]?.apt || '';
         const workId = sortedVisits[0]?.workId || '';
 
         items.push({
           type: 'customer',
-          sortDate: lastSortKey,  // savedAt 또는 date
+          sortDate: lastSortKey,  // 폴더명(작업시간) 또는 savedAt 또는 date
           data: {
             ...c,
             visits: groupVisits,
@@ -224,7 +249,11 @@ async function loadCombinedRecords() {
       // ★ 기간 필터 미리 계산 (폴더명으로 필터링해서 읽을 파일 최소화)
       let filterFrom = null;
       let filterTo = null;
-      if (_customerUseDefault) {
+      if (forceAll) {
+        // 전체 로드 (백그라운드 빌드용) - 필터 안 함
+        filterFrom = null;
+        filterTo = null;
+      } else if (_customerUseDefault) {
         filterFrom = getDefaultDateFrom();
         filterTo = getDefaultDateTo();  // 오늘 + 1일 (안전마진)
       } else {
@@ -263,13 +292,27 @@ async function loadCombinedRecords() {
             const aptDateKey = `${apt}::${date}`;
             if (customerAptDateKeys.has(aptDateKey)) continue;
           }
-          const dupKey = `${apt}::${date}`;
+          // ★ 중복 제거 - workId가 있으면 workId 기준, 없으면 apt+date 폴백
+          //   (이전: apt+date만으로 중복 판정 → 같은 날 같은 아파트의 다른 작업이 사라짐)
+          const dupKey = workId ? `wid:${workId}` : `apt:${apt}::${date}`;
           if (seenAptDate.has(dupKey)) continue;
           seenAptDate.add(dupKey);
 
+          // ★ 정렬 키: 폴더명(작업 날짜+시간) 우선 → savedAt → date
+          let workSortKey;
+          const fnW = w.folderName || '';
+          const mW = fnW.match(/^(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})/);
+          if (mW) {
+            workSortKey = `${mW[1]}T${mW[2]}:${mW[3]}`;
+          } else if (/^\d{4}-\d{2}-\d{2}$/.test(fnW)) {
+            workSortKey = `${fnW}T00:00`;
+          } else {
+            workSortKey = w.savedAt || date;
+          }
+
           items.push({
             type: 'work',
-            sortDate: w.savedAt || w.folderName || date,
+            sortDate: workSortKey,
             data: {
               folderName: w.folderName,
               dirHandle: null,  // 인덱스에는 핸들 없음 - 필요 시 동적 가져옴
@@ -333,17 +376,28 @@ async function loadCombinedRecords() {
           if (customerAptDateKeys.has(aptDateKey)) continue;
         }
 
-        // 폴더 자체의 중복 제거
-        const dupKey = `${apt}::${date}`;
+        // 폴더 자체의 중복 제거 - workId 우선
+        //   (이전: apt+date만 → 같은 날 같은 아파트의 다른 작업이 사라짐)
+        const dupKey = workId ? `wid:${workId}` : `apt:${apt}::${date}`;
         if (seenAptDate.has(dupKey)) continue;
         seenAptDate.add(dupKey);
 
+        // ★ 정렬 키: 폴더명(작업 날짜+시간) 우선 → savedAt → date
+        // 폴더명 형식 YYYY-MM-DD_HHMM → ISO-like 정규화
+        let folderSortKey;
+        const fnF = entry.name;
+        const mF = fnF.match(/^(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})/);
+        if (mF) {
+          folderSortKey = `${mF[1]}T${mF[2]}:${mF[3]}`;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(fnF)) {
+          folderSortKey = `${fnF}T00:00`;
+        } else {
+          folderSortKey = data.savedAt || date;
+        }
+
         items.push({
           type: 'work',
-          // ★ savedAt(ISO) 우선 → 같은 날짜 내 시간순 정렬
-          // 없으면 폴더명 (2026-05-17_14-30-15 형식) → 시간 포함
-          // 모두 없으면 date만
-          sortDate: data.savedAt || entry.name || date,
+          sortDate: folderSortKey,
           data: {
             folderName: entry.name,
             dirHandle: entry,
@@ -386,41 +440,34 @@ async function renderCustomerList() {
     items = getRecordsFromCache();
   }
 
-  // 캐시 없으면 직접 로드 (loadCombinedRecords가 현재 필터로 조회)
-  // → 사용자가 처음 모달 열 때만 발생, 다음부터는 캐시 사용
+  // 캐시 없으면 직접 로드
+  // ★ 점진적 로딩: 사용자가 보는 기간(기본 3일)만 빠르게 로드 → 표시
+  //    → 백그라운드에서 전체 빌드 → 다음에는 캐시에서 즉시
   if (!items) {
     if (!body.querySelector('.cust-card') && !body.querySelector('.cust-card-work')) {
       body.innerHTML = `<div style="padding:40px 20px;text-align:center;color:var(--mu);">
         <div style="font-size:24px;margin-bottom:12px;">⏳</div>
-        <div>작업 기록 불러오는 중...</div>
+        <div>최근 작업 불러오는 중...</div>
       </div>`;
     }
-    // 필터 잠시 "전체"로 (캐시 채우기 위해)
-    const prevDefault = _customerUseDefault;
-    const prevFrom = _customerDateFrom;
-    const prevTo = _customerDateTo;
+    // ★ 사용자 필터(기본 3일) 유지 - 빠르게 로드
     try {
-      _customerUseDefault = false;
-      _customerDateFrom = null;
-      _customerDateTo = null;
       items = await loadCombinedRecords();
-      // 백그라운드 캐시에도 저장
-      if (typeof window !== 'undefined') {
-        window.__cacheAllRecords && window.__cacheAllRecords(items);
-      }
+      // 부분 캐시는 안 함 - 전체 데이터가 아니므로
+      // (백그라운드에서 전체 빌드 후 캐시 채움)
     } catch(e) {
       body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--mu);">목록 로드 실패: ${e.message}</div>`;
-      _customerUseDefault = prevDefault;
-      _customerDateFrom = prevFrom;
-      _customerDateTo = prevTo;
       return;
     }
-    _customerUseDefault = prevDefault;
-    _customerDateFrom = prevFrom;
-    _customerDateTo = prevTo;
+    // 백그라운드 전체 빌드 예약 (다음 호출 또는 "전체" 보기 시 즉시 표시)
+    if (typeof scheduleBackgroundBuild === 'function') {
+      scheduleBackgroundBuild();
+    }
+    // ★ items는 이미 사용자 필터(3일) 적용된 결과지만 안전하게 아래 필터링 한 번 더 적용
+    // (race condition으로 _customerUseDefault가 바뀌어도 화면이 라벨과 일치하도록)
   }
 
-  // ★ 사용자가 보는 기간 필터 적용
+  // ★ 사용자가 보는 기간 필터 적용 - 항상 (라벨과 100% 일치 보장)
   let dateFrom = _customerDateFrom;
   let dateTo = _customerDateTo;
   if (_customerUseDefault) {
@@ -864,6 +911,13 @@ async function renderCustomerList() {
           if (typeof flushCustomersXlsx === 'function') {
             await flushCustomersXlsx();
           }
+          // ★ 현재 화면이 삭제한 작업이면 화면도 초기화 (앱 재시작 시 부활 방지)
+          if (typeof clearIfCurrent === 'function') {
+            await clearIfCurrent(folder);
+          }
+          // ★ 사용자가 보던 필터(기본 3일 등)는 그대로 유지하면서 화면만 다시 그림
+          //   - 캐시 무효화로 다음 renderCustomerList는 점진적 로딩 경로(빠름)로 감
+          //   - "전체" 보던 중이었다면 잠시 빈 상태 → 백그라운드 빌드 완료 후 자동 갱신
           await renderCustomerList();
           showToast('✓ 작업 삭제됨', 'ok');
         } else {
@@ -984,37 +1038,73 @@ async function openWorkByFolder(folderName, apt, date) {
     return;
   }
 
-  // ★ 클릭 즉시 confirm (지연 없음)
+  // ★ 클릭 즉시 confirm (지연 없음) - 폴더명도 표시 (디버그)
   const aptName = apt || folderName;
   const dateStr = date || '';
-  const msg = `📂 작업 불러오기\n\n${aptName}${dateStr ? ' · ' + dateStr : ''}\n\n이 작업을 불러올까요?`;
+  const msg = `📂 작업 불러오기\n\n${aptName}${dateStr ? ' · ' + dateStr : ''}\n📁 ${folderName}\n\n이 작업을 불러올까요?`;
   if (!confirm(msg)) return;
 
   // ★ 확인 후 - 모든 입력 차단
   setAppBusy(true, '📂 불러오는 중...');
   closeCustomerModal();
 
+  const _T0 = Date.now();
+  console.log('[작업열기] 시작:', folderName);
+
   try {
-    // 변경사항 있으면 먼저 저장 (백그라운드)
+    // ★ 변경사항 있으면 사용자에게 물어봄 (1.240) - 자동저장 제거
+    //   - 자동저장은 사용자가 의식 못 함 + 시간 소요 큼
+    //   - 명시적 선택: 저장 후 열기 / 버리고 열기 / 취소
     try {
-      const currentSnap = (typeof quickSnapshot === 'function') ? quickSnapshot() : '';
-      const hasChanges = (currentSnap !== _lastSaveSnapshot) && units && units.length > 0;
-      if (hasChanges && typeof saveToFolder === 'function') {
-        await saveToFolder({ auto: true, force: true, silent: true });
+      const isDirty = (typeof _dataDirty !== 'undefined' && _dataDirty);
+      if (isDirty && units && units.length > 0) {
+        const choice = confirm(
+          '💾 현재 작업에 저장 안 된 변경사항이 있어요.\n\n' +
+          '저장하고 열까요?\n\n' +
+          '확인 → 저장 후 새 작업 열기\n' +
+          '취소 → 저장 안 하고 새 작업 열기'
+        );
+        if (choice && typeof saveToFolder === 'function') {
+          console.log('[작업열기] 사용자가 저장 선택 → 저장');
+          // ★ force 제거 - saveToFolder 내부 dirty 체크가 작동하여 정말 변경 없으면 스킵
+          await saveToFolder({ auto: true, silent: true });
+          console.log(`[작업열기] 자동저장: ${Date.now() - _T0}ms`);
+        } else {
+          console.log('[작업열기] 사용자가 저장 안 함 선택 → 변경 버리고 진행');
+        }
+      } else {
+        console.log('[작업열기] 변경사항 없음 → 자동저장 스킵');
       }
-    } catch(e) { console.warn('자동저장 실패:', e); }
+    } catch(e) { console.warn('자동저장 분기 실패:', e); }
+
+    const _T1 = Date.now();
+    const _tAuto = _T1 - _T0;
 
     // 폴더 읽기 + 불러오기
     const dirHandle = await photoFolderHandle.getDirectoryHandle(folderName);
     const sf = await dirHandle.getFileHandle('_session.json');
     const f = await sf.getFile();
     const data = JSON.parse(await f.text());
+    const _T2 = Date.now();
+    const _tMeta = _T2 - _T1;
+    console.log(`[작업열기] 폴더 메타 읽기: ${_tMeta}ms`);
 
+    let _tLoad = 0;
     if (typeof loadFromDateFolder === 'function') {
       await Promise.race([
         loadFromDateFolder(dirHandle, data),
         new Promise((_, reject) => setTimeout(() => reject(new Error('시간 초과')), 60000))
       ]);
+      _tLoad = Date.now() - _T2;
+      console.log(`[작업열기] loadFromDateFolder: ${_tLoad}ms`);
+    }
+    const _tTotal = Date.now() - _T0;
+    console.log(`[작업열기] 총 소요: ${_tTotal}ms`);
+
+    // ★ 화면에 진단 토스트 (모바일에서 콘솔 못 볼 때) - 2초 이상 걸렸을 때만
+    if (_tTotal > 2000 && typeof showToast === 'function') {
+      const breakdown = `⏱️ ${_tTotal}ms (자동저장:${_tAuto} 메타:${_tMeta} 복원:${_tLoad})`;
+      showToast(breakdown, 'ok');
     }
   } catch(e) {
     showToast('불러오기 실패: ' + e.message, 'err');
@@ -1130,6 +1220,7 @@ function renderWorkCard(w) {
       <div class="cust-card-line cust-card-meta">
         <span style="color:var(--mu);">${escHtmlSafe(w.date)}</span>
         <span>· 사진 ${w.totalPhotos}장</span>
+        <span style="color:var(--mu);font-size:10px;opacity:0.6;margin-left:auto;">📁 ${escHtmlSafe(w.folderName || '?')}</span>
       </div>
     </div>
   `;

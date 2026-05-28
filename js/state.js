@@ -318,7 +318,7 @@ function setupBackButtonHandler() {
     _justClosedTimer = Date.now();
   };
 
-  window.addEventListener('popstate', (e) => {
+  window.addEventListener('popstate', async (e) => {
     // ★ -1) 종료가 이미 확인됨 - 다시 묻지 않고 계속 뒤로 (히스토리 끝까지)
     if (_exitConfirmed) {
       // 안전장치: 50회 넘게 뒤로 가도 안 끝나면 멈춤 (무한 루프 방지)
@@ -379,23 +379,32 @@ function setupBackButtonHandler() {
     const confirmExit = confirm('앱을 종료하시겠습니까?\n\n작업 내용은 자동으로 저장되어 있어 다음에 다시 열 수 있습니다.');
 
     if (confirmExit) {
-      // 변경 있을 때만 저장 (변경 없으면 빠르게 종료)
-      if (typeof _dataDirty === 'undefined' || _dataDirty) {
-        try { sessionAutoSaveNow(); } catch(e) {}
-        try { if (typeof flushAllCustomers === 'function') flushAllCustomers(); } catch(e) {}
-      }
-
-      // 종료 시도:
       // ★ 종료 의도 마킹 - 다음 popstate에서 또 종료 확인 안 띄움
       _exitConfirmed = true;
 
+      // ★ 변경 있을 때만 저장 완료를 기다림 (변경 없으면 즉시 종료)
+      const needsSave = (typeof _dataDirty === 'undefined' || _dataDirty);
+      if (needsSave) {
+        if (typeof showToast === 'function') showToast('저장 후 종료합니다...', 'ok');
+        try {
+          if (typeof sessionAutoSaveNow === 'function') await sessionAutoSaveNow();
+        } catch(e) { console.warn('종료 저장 실패:', e); }
+        try {
+          if (typeof flushAllCustomers === 'function') await flushAllCustomers();
+        } catch(e) { console.warn('고객 flush 실패:', e); }
+      }
+
+      // 종료 시도:
       // 1) window.close() (PWA/Chrome 앱)
       try { window.close(); } catch(e) {}
 
-      // 2) 안 닫히면 단순히 history.back() 한 번
-      //    브라우저가 더 뒤로갈 게 없으면 탭 닫힘 (모바일)
-      //    또는 빈 페이지로 (홈 → 종료는 사용자가 직접)
-      try { window.history.back(); } catch(e) {}
+      // 2) history.go(-N) - 한 번에 끝까지 뒤로
+      //    모달 열때마다 pushState 누적된 경우도 한 방에 정리
+      try {
+        window.history.go(-Math.max(2, window.history.length - 1));
+      } catch(e) {
+        try { window.history.back(); } catch(e2) {}
+      }
     } else {
       // 취소 → 메인 상태 다시 pushState
       history.pushState({ page: 'main' }, '', location.href);

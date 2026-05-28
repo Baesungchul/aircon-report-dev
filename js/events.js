@@ -18,7 +18,6 @@ function bindAll() {
   document.getElementById('btnAdd').addEventListener('click', () => addUnit());
   document.getElementById('newName').addEventListener('keydown', e => { if(e.key==='Enter') addUnit(); });
   document.getElementById('btnBulk').addEventListener('click', bulkAdd);
-  document.getElementById('btnClear').addEventListener('click', clearAll);
   document.getElementById('btnExp').addEventListener('click', ()=>{ units.forEach(u=>u.open=true); renderAll(); });
   document.getElementById('btnCol').addEventListener('click', ()=>{ units.forEach(u=>u.open=false); renderAll(); });
   document.getElementById('srch').addEventListener('input', renderAll);
@@ -226,7 +225,11 @@ function bindAll() {
         }
       }
     });
-    // ★ 줌 상태 클래스 토글 (1배 초과면 왼쪽 정렬로 전환)
+    // ★★★ .zoomed 클래스는 이제 단순 상태 마커 (CSS에서 layout 영향 없음)
+    //     이 클래스로 align-items를 바꾸는 CSS를 절대 다시 넣지 말 것
+    //     - 1.213 이전: align-items:center → .zoomed면 flex-start → 확대 순간 가운데→좌측 점프
+    //     - 1.220 수정: CSS를 "align-items:safe center"로 변경하여 점프 제거
+    //     자세한 내용은 styles.css의 .pv-scroll 주석 참고
     const pvScroll = document.getElementById('pvScroll');
     if (pvScroll) {
       if (_pvZoom > 1.01) pvScroll.classList.add('zoomed');
@@ -586,7 +589,11 @@ function bindAll() {
         u.open=!u.open;
         renderAll();
         // ★ 펼쳤으면 이 호수의 원본 사진들 백그라운드 preload
-        if (u.open) preloadUnitPhotos(u);
+        if (u.open) {
+          preloadUnitPhotos(u);
+          // ★ 화면 표시용 lazy 사진(썸네일) 있으면 로딩 모달 + 완료 시 자동 닫기
+          showPhotoLoadingModalForUnit(u);
+        }
       }
       return;
     }
@@ -595,17 +602,89 @@ function bindAll() {
       e.stopPropagation();
       startEdit(+t.closest('[data-uid]').dataset.uid); return;
     }
+    // ★ 휴지통 토글
+    const trashHdr = t.closest('.trash-hdr');
+    if (trashHdr) {
+      e.stopPropagation();
+      const u = findU(+trashHdr.dataset.uid);
+      if (u) { u._trashOpen = !u._trashOpen; renderAll(); }
+      return;
+    }
+    // ★ 휴지통 사진 1장 복원
+    const trashRestore = t.closest('.trash-restore-one');
+    if (trashRestore) {
+      e.stopPropagation();
+      const u = findU(+trashRestore.dataset.uid);
+      const ti = +trashRestore.dataset.tidx;
+      if (u && u._trash && u._trash[ti]) {
+        const p = u._trash.splice(ti, 1)[0];
+        const type = p._trashType || 'before';
+        delete p._trashType;
+        if (!u[type]) u[type] = [];
+        u[type].push(p);
+        if (u._trash.length === 0) u._trashOpen = false;
+        renderAll(); updateStats(); sessionAutoSave();
+        showToast('↩️ 사진 복원됨', 'ok');
+      }
+      return;
+    }
+    // ★ 휴지통 전체 복원
+    const trashRestoreAll = t.closest('.trash-restore-all');
+    if (trashRestoreAll) {
+      e.stopPropagation();
+      const u = findU(+trashRestoreAll.dataset.uid);
+      if (u && u._trash && u._trash.length > 0) {
+        const n = u._trash.length;
+        u._trash.forEach(p => {
+          const type = p._trashType || 'before';
+          delete p._trashType;
+          if (!u[type]) u[type] = [];
+          u[type].push(p);
+        });
+        u._trash = [];
+        u._trashOpen = false;
+        renderAll(); updateStats(); sessionAutoSave();
+        showToast(`↩️ ${n}장 모두 복원됨`, 'ok');
+      }
+      return;
+    }
+    // ★ 휴지통 비우기
+    const trashEmpty = t.closest('.trash-empty');
+    if (trashEmpty) {
+      e.stopPropagation();
+      const u = findU(+trashEmpty.dataset.uid);
+      if (u && u._trash && u._trash.length > 0) {
+        if (confirm(`🗑️ 삭제된 사진 ${u._trash.length}장을 완전히 비울까요?\n\n(이 작업은 되돌릴 수 없습니다)`)) {
+          u._trash = [];
+          u._trashOpen = false;
+          renderAll();
+          showToast('휴지통을 비웠습니다', 'ok');
+        }
+      }
+      return;
+    }
     // 삭제
     const db2 = t.closest('.del-btn');
     if (db2) { e.stopPropagation(); deleteUnit(+db2.dataset.id); return; }
-    // 사진 썸네일 삭제
+    // 사진 썸네일 삭제 → 휴지통으로 이동 (복원 가능)
     const tdl = t.closest('.th-del');
     if (tdl) {
       e.stopPropagation();
       // ★ sp-th-del(특이사항 사진)은 document 핸들러에서 처리
       if (tdl.classList.contains('sp-th-del')) return;
       const uid=+tdl.dataset.uid, type=tdl.dataset.type, idx=+tdl.dataset.idx;
-      const u=findU(uid); if(u){ u[type].splice(idx,1); renderAll(); updateStats(); sessionAutoSave(); } return;
+      const u=findU(uid);
+      if(u){
+        const removed = u[type].splice(idx,1)[0];
+        if (removed) {
+          // ★ 휴지통으로 이동 (세션 한정) - 원래 위치(type) 기록
+          if (!u._trash) u._trash = [];
+          removed._trashType = type;  // 복원 시 작업전/후 구분
+          u._trash.push(removed);
+        }
+        renderAll(); updateStats(); sessionAutoSave();
+      }
+      return;
     }
     // 개별 사진 폴더로 저장 (↓ 버튼)
     const tsv = t.closest('.th-save-btn');
@@ -906,6 +985,106 @@ async function preloadUnitPhotos(u) {
   }
 }
 
+// ★ 호수 펼칠 때 lazy 사진이 있으면 로딩 모달 표시 (완료 시 자동 닫기)
+async function showPhotoLoadingModalForUnit(u) {
+  if (!u) return;
+  // 화면 표시용 lazy 사진들 수집 (dataUrl 없는 것)
+  const pending = [];
+  (u.before || []).forEach(p => { if (p && !p.dataUrl) pending.push(p); });
+  (u.after  || []).forEach(p => { if (p && !p.dataUrl) pending.push(p); });
+  (u.specials || []).forEach(s => {
+    (s.photos || []).forEach(p => { if (p && !p.dataUrl) pending.push(p); });
+  });
+  if (pending.length === 0) return;  // 모두 로드됨 - 모달 안 띄움
+
+  const total = pending.length;
+  console.log(`[사진로딩] ${u.name}: ${total}장 대기`);
+
+  // 이미 다른 호수에서 모달이 떠있으면 중복 표시 안 함
+  if (document.getElementById('photoLoadOverlay')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'photoLoadOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:650;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div style="background:var(--sf);border-radius:14px;padding:24px 28px;max-width:340px;width:100%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.5);">
+      <div style="font-size:32px;margin-bottom:14px;">📷</div>
+      <div style="font-weight:700;font-size:16px;margin-bottom:6px;">${u.name || '호수'} 사진 불러오는 중</div>
+      <div id="photoLoadCount" style="font-size:13px;color:var(--mu);margin-bottom:14px;">0 / ${total}장</div>
+      <div style="height:6px;background:var(--bd);border-radius:3px;overflow:hidden;">
+        <div id="photoLoadBar" style="height:100%;background:var(--ac);border-radius:3px;width:0%;transition:width 0.3s;"></div>
+      </div>
+      <div style="font-size:11px;color:var(--mu);margin-top:12px;line-height:1.5;">사진이 완전히 표시될 때까지<br>잠시만 기다려 주세요</div>
+      <button id="photoLoadCancel" style="margin-top:14px;background:transparent;border:1px solid var(--bd);color:var(--mu);padding:6px 14px;border-radius:6px;font-size:12px;">취소</button>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // 취소 버튼
+  let cancelled = false;
+  overlay.querySelector('#photoLoadCancel').addEventListener('click', () => {
+    cancelled = true;
+    overlay.remove();
+  });
+
+  // ★ 그 호수만 우선 로드 (전역 lazy 로딩 락에 막히지 않음)
+  if (typeof loadLazyPhotosForUnit === 'function') {
+    console.log('[사진로딩] loadLazyPhotosForUnit 호출');
+    // 비동기로 시작 (await 안 함 - 폴링이 진행 추적)
+    loadLazyPhotosForUnit(u).catch(e => console.warn('[사진로딩] 실패:', e));
+  } else if (typeof startLazyPhotoLoading === 'function') {
+    console.log('[사진로딩] startLazyPhotoLoading 호출 (폴백)');
+    startLazyPhotoLoading();
+  } else {
+    console.warn('[사진로딩] 로더 함수 없음!');
+  }
+
+  // 진행상황 폴링
+  const countEl = overlay.querySelector('#photoLoadCount');
+  const barEl   = overlay.querySelector('#photoLoadBar');
+  const startedAt = Date.now();
+  const MAX_WAIT_MS = 30000;  // 최대 30초 (60→30 단축)
+  let lastLoaded = 0;
+  let stuckSince = Date.now();
+
+  while (!cancelled) {
+    const stillPending = pending.filter(p => !p.dataUrl).length;
+    const loaded = total - stillPending;
+    const pct = Math.round((loaded / total) * 100);
+    if (countEl) countEl.textContent = `${loaded} / ${total}장`;
+    if (barEl)   barEl.style.width = pct + '%';
+
+    if (stillPending === 0) break;
+    if (Date.now() - startedAt > MAX_WAIT_MS) {
+      console.warn('[사진로딩] 타임아웃 - 강제 종료');
+      break;
+    }
+    // 5초간 진행 없으면 멈춘 것으로 판단 → 우선 로드 재시도
+    if (loaded === lastLoaded) {
+      if (Date.now() - stuckSince > 5000) {
+        console.warn('[사진로딩] 5초간 진행 없음 - 우선 로드 재시도');
+        if (typeof loadLazyPhotosForUnit === 'function') {
+          loadLazyPhotosForUnit(u).catch(e => console.warn('[사진로딩] 재시도 실패:', e));
+        } else if (typeof startLazyPhotoLoading === 'function') {
+          startLazyPhotoLoading();
+        }
+        stuckSince = Date.now();
+      }
+    } else {
+      lastLoaded = loaded;
+      stuckSince = Date.now();
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  // 100% 표시 잠깐 보여주고 닫기
+  if (!cancelled) {
+    if (barEl) barEl.style.width = '100%';
+    await new Promise(r => setTimeout(r, 300));
+  }
+  overlay.remove();
+  console.log(`[사진로딩] ${u.name} 완료: ${total - pending.filter(p => !p.dataUrl).length}/${total}장`);
+}
+
 // ★ 불러온 직후 - 모든 lazy 사진을 백그라운드로 점진 로드
 // (placeholder 표시되는 거 자동 교체)
 let _lazyLoadingInProgress = false;
@@ -913,6 +1092,7 @@ async function startLazyPhotoLoading() {
   if (_lazyLoadingInProgress) return;
   _lazyLoadingInProgress = true;
 
+  let failed = 0;
   try {
     const targets = [];
     for (const u of (units || [])) {
@@ -931,7 +1111,8 @@ async function startLazyPhotoLoading() {
     if (targets.length === 0) return;
 
     console.log(`[lazy load] ${targets.length}장 백그라운드 로딩 시작`);
-    const BATCH = 4;
+    // ★ 배치 작게 (4→2) - 사진 한 번에 너무 많이 디코딩 안 함
+    const BATCH = 2;
     for (let i = 0; i < targets.length; i += BATCH) {
       const batch = targets.slice(i, i + BATCH);
       await Promise.all(batch.map(async p => {
@@ -941,7 +1122,7 @@ async function startLazyPhotoLoading() {
             fh = await p._workDir.getFileHandle(p.fileName);
             p.fileHandle = fh;
           }
-          if (!fh) return;
+          if (!fh) { failed++; return; }
           const file = await fh.getFile();
           const dataUrl = await blobToDataURL(file);
           p.dataUrl = dataUrl;
@@ -950,17 +1131,77 @@ async function startLazyPhotoLoading() {
           document.querySelectorAll(`img[data-photo-id="${p.id}"]`).forEach(img => {
             img.src = dataUrl;
           });
-        } catch(e) {}
+        } catch(e) {
+          failed++;
+          console.warn(`[lazy load] 실패 (${p.fileName || p.id}):`, e.message);
+        }
       }));
-      // 부담 분산 (UI 멈춤 방지)
-      await new Promise(r => setTimeout(r, 80));
+      // ★ 강제 paint - 배치마다 화면 갱신 보장 (사진이 점진적으로 보이도록)
+      //   이전: setTimeout(80ms) - 메인 스레드는 양보하지만 paint는 안 일어날 수도 있음
+      //   변경: requestAnimationFrame - 다음 paint 직전까지 양보 → 사진 보임 보장
+      await new Promise(r => requestAnimationFrame(() => setTimeout(r, 20)));
     }
-    console.log(`[lazy load] 완료`);
+    if (failed > 0) {
+      console.warn(`[lazy load] 완료: ${targets.length - failed}장 성공, ${failed}장 실패`);
+      if (typeof showToast === 'function') {
+        showToast(`⚠️ 사진 ${failed}장 불러오기 실패 - 폴더 권한을 다시 확인해주세요`, 'err');
+      }
+    } else {
+      console.log(`[lazy load] 완료: ${targets.length}장 성공`);
+    }
   } finally {
     _lazyLoadingInProgress = false;
   }
 }
 window.startLazyPhotoLoading = startLazyPhotoLoading;
+
+// ★ 특정 호수의 사진만 우선 로드 (호수 펼칠 때 호출)
+//   - 전역 startLazyPhotoLoading이 도는 중이어도 이 호수 사진 먼저 처리
+async function loadLazyPhotosForUnit(u) {
+  if (!u) return;
+  const targets = [];
+  (u.before || []).forEach(p => {
+    if (p && !p.dataUrl && (p.fileHandle || (p._workDir && p.fileName))) targets.push(p);
+  });
+  (u.after || []).forEach(p => {
+    if (p && !p.dataUrl && (p.fileHandle || (p._workDir && p.fileName))) targets.push(p);
+  });
+  (u.specials || []).forEach(s => {
+    (s.photos || []).forEach(p => {
+      if (p && !p.dataUrl && (p.fileHandle || (p._workDir && p.fileName))) targets.push(p);
+    });
+  });
+  if (targets.length === 0) return;
+
+  console.log(`[lazy unit] ${u.name}: ${targets.length}장 우선 로드`);
+  // ★ 배치 작게 + paint 양보 (사진 점진적으로 보이도록)
+  const BATCH = 2;
+  for (let i = 0; i < targets.length; i += BATCH) {
+    const batch = targets.slice(i, i + BATCH);
+    await Promise.all(batch.map(async p => {
+      try {
+        let fh = p.fileHandle;
+        if (!fh && p._workDir && p.fileName) {
+          fh = await p._workDir.getFileHandle(p.fileName);
+          p.fileHandle = fh;
+        }
+        if (!fh) return;
+        const file = await fh.getFile();
+        const dataUrl = await blobToDataURL(file);
+        p.dataUrl = dataUrl;
+        p.lazy = false;
+        document.querySelectorAll(`img[data-photo-id="${p.id}"]`).forEach(img => {
+          img.src = dataUrl;
+        });
+      } catch(e) {
+        console.warn(`[lazy unit] 실패 (${p.fileName || p.id}):`, e.message);
+      }
+    }));
+    // 강제 paint - 사진 점진적으로 보이도록
+    await new Promise(r => requestAnimationFrame(() => setTimeout(r, 20)));
+  }
+}
+window.loadLazyPhotosForUnit = loadLazyPhotosForUnit;
 // 배열을 객체 배열로 정규화 (문자열은 객체로 변환)
 function normalizePhotos(arr) {
   if (!Array.isArray(arr)) return [];
@@ -1063,14 +1304,160 @@ function startEdit(id) {
   el.replaceWith(inp); inp.focus(); inp.select();
 }
 
-function clearAll() {
-  if(!confirm('모든 호수와 사진을 초기화할까요?')) return;
-  units=[]; nid=1;
-  document.getElementById('rpWrap').innerHTML='';
-  { const _b = document.getElementById('btnPDF'); if (_b) _b.disabled = true; }
-  { const _b = document.getElementById('btnJPG'); if (_b) _b.disabled = true; }
-  renderAll(); updateStats();
+async function clearAll() {
+  const aptInput = document.getElementById('aptName');
+  const apt = aptInput?.value || '';
+  const hasFolder = !!currentFolderName;
+  const hasData = units.length > 0 || apt;
+
+  // 데이터 없으면 그냥 통과
+  if (!hasData) {
+    showToast('초기화할 작업이 없습니다', 'ok');
+    return;
+  }
+
+  // 확인 메시지
+  let msg = `🗑️ 현재 작업을 완전히 삭제할까요?\n\n`;
+  msg += `${apt || '(이름 없음)'}\n호수 ${units.length}개\n\n`;
+  if (hasFolder) {
+    msg += `※ 저장 폴더와 사진도 모두 삭제됩니다.\n작업 기록에서도 제거됩니다.\n`;
+  } else {
+    msg += `※ 현재 작업 내용이 모두 사라집니다.\n`;
+  }
+  msg += `이 작업은 되돌릴 수 없습니다.`;
+
+  if (!confirm(msg)) return;
+
+  showOverlay('삭제 중...');
+  const safetyTimeout = setTimeout(() => {
+    hideOverlay();
+    showToast('삭제 시간 초과 - 다시 시도해주세요', 'err');
+  }, 30000);
+
+  try {
+    // 1) 저장 폴더 삭제 (있으면)
+    const folderName = currentFolderName;
+    if (folderName && photoFolderHandle) {
+      try {
+        let perm = await photoFolderHandle.queryPermission({ mode: 'readwrite' });
+        if (perm !== 'granted') {
+          perm = await photoFolderHandle.requestPermission({ mode: 'readwrite' });
+        }
+        if (perm === 'granted') {
+          let deleted = false;
+          // 1차 recursive
+          try {
+            await photoFolderHandle.removeEntry(folderName, { recursive: true });
+            deleted = true;
+          } catch(e1) { console.warn('recursive 삭제 실패:', e1.message); }
+          // 2차 수동 재귀
+          if (!deleted && typeof deleteDirectoryContents === 'function') {
+            try {
+              const dh = await photoFolderHandle.getDirectoryHandle(folderName);
+              await deleteDirectoryContents(dh);
+              await photoFolderHandle.removeEntry(folderName);
+              deleted = true;
+            } catch(e2) { console.warn('수동 삭제 실패:', e2.message); }
+          }
+          // 3차 빈 폴더 시도
+          if (!deleted) {
+            try { await photoFolderHandle.removeEntry(folderName); deleted = true; } catch(e3) {}
+          }
+        }
+      } catch(e) { console.warn('폴더 삭제 중 오류:', e.message); }
+
+      // 인덱스/캐시 정리
+      if (typeof scheduleIndexDelete === 'function') scheduleIndexDelete(folderName);
+      if (typeof invalidateRecordsCache === 'function') invalidateRecordsCache();
+      if (typeof invalidateCustomersV2 === 'function') invalidateCustomersV2();
+      if (typeof invalidateCustomersCache === 'function') invalidateCustomersCache();
+    }
+
+    // 2) 화면/상태 완전 초기화
+    units = []; nid = 1;
+    currentWorkId = '';
+    currentFolderName = null;
+    facilityCustomer = { phone: '', contact: '', address: '', memo: '' };
+    if (typeof resetWorkType === 'function') resetWorkType();
+    if (typeof _indexCounter !== 'undefined') _indexCounter.clear();
+    if (typeof _unitWorkNumber !== 'undefined') _unitWorkNumber.clear();
+    if (typeof _savedPhotoIds !== 'undefined') _savedPhotoIds.clear();
+    if (typeof pendingSaves !== 'undefined') pendingSaves.length = 0;
+    if (typeof _dataDirty !== 'undefined') _dataDirty = false;
+
+    document.getElementById('rpWrap').innerHTML = '';
+    if (aptInput) { aptInput.value = ''; aptInput.placeholder = '작업명을 입력하세요'; }
+    const dateEl = document.getElementById('workDate');
+    if (dateEl && typeof kstDateStr === 'function') dateEl.value = kstDateStr();
+    const workerEl = document.getElementById('workerName');
+    if (workerEl) workerEl.value = '';
+
+    const btnPDF = document.getElementById('btnPDF'); if (btnPDF) btnPDF.disabled = true;
+    const btnJPG = document.getElementById('btnJPG'); if (btnJPG) btnJPG.disabled = true;
+
+    if (typeof _lastSaveSnapshot === 'string' && typeof quickSnapshot === 'function') {
+      _lastSaveSnapshot = quickSnapshot();
+    }
+
+    renderAll();
+    updateStats();
+
+    // 3) 세션 자동저장 (빈 상태로 덮어써서 재실행 시 부활 방지)
+    try { if (typeof sessionAutoSaveNow === 'function') await sessionAutoSaveNow(); } catch(e) {}
+
+    clearTimeout(safetyTimeout);
+    hideOverlay();
+    showToast('✓ 작업 삭제됨', 'ok');
+  } catch(e) {
+    clearTimeout(safetyTimeout);
+    hideOverlay();
+    showToast('삭제 실패: ' + e.message, 'err');
+  }
 }
+
+// ★ 외부에서 호출: 폴더가 삭제됐을 때, 현재 화면이 그 폴더면 화면도 초기화
+// (작업기록/고객/방문 삭제 시 사용 - 앱 재시작해도 부활 안 하도록)
+async function clearIfCurrent(deletedFolderName) {
+  if (!deletedFolderName) return false;
+  if (currentFolderName !== deletedFolderName) return false;
+
+  // 화면/상태 완전 초기화 (clearAll의 후반부와 동일)
+  units = []; nid = 1;
+  currentWorkId = '';
+  currentFolderName = null;
+  facilityCustomer = { phone: '', contact: '', address: '', memo: '' };
+  if (typeof resetWorkType === 'function') resetWorkType();
+  if (typeof _indexCounter !== 'undefined') _indexCounter.clear();
+  if (typeof _unitWorkNumber !== 'undefined') _unitWorkNumber.clear();
+  if (typeof _savedPhotoIds !== 'undefined') _savedPhotoIds.clear();
+  if (typeof pendingSaves !== 'undefined') pendingSaves.length = 0;
+  if (typeof _dataDirty !== 'undefined') _dataDirty = false;
+
+  const rpWrap = document.getElementById('rpWrap'); if (rpWrap) rpWrap.innerHTML = '';
+  const aptInput = document.getElementById('aptName');
+  if (aptInput) { aptInput.value = ''; aptInput.placeholder = '작업명을 입력하세요'; }
+  const dateEl = document.getElementById('workDate');
+  if (dateEl && typeof kstDateStr === 'function') dateEl.value = kstDateStr();
+  const workerEl = document.getElementById('workerName');
+  if (workerEl) workerEl.value = '';
+
+  const btnPDF = document.getElementById('btnPDF'); if (btnPDF) btnPDF.disabled = true;
+  const btnJPG = document.getElementById('btnJPG'); if (btnJPG) btnJPG.disabled = true;
+
+  if (typeof _lastSaveSnapshot === 'string' && typeof quickSnapshot === 'function') {
+    _lastSaveSnapshot = quickSnapshot();
+  }
+
+  if (typeof renderAll === 'function') renderAll();
+  if (typeof updateStats === 'function') updateStats();
+
+  // 세션 자동저장 (빈 상태로 덮어쓰기 → 재실행 시 부활 방지)
+  try { if (typeof sessionAutoSaveNow === 'function') await sessionAutoSaveNow(); } catch(e) {}
+
+  return true;
+}
+// 전역 노출
+if (typeof window !== 'undefined') window.clearIfCurrent = clearIfCurrent;
 
 // 새 작업 시작
 async function newWork() {
@@ -1107,17 +1494,30 @@ async function newWork() {
     s + u.before.length + u.after.length +
     u.specials.reduce((a,sp) => a+sp.photos.length, 0), 0);
 
-  // 확인 메시지
-  let msg = `📋 현재 작업: 호수 ${units.length}개, 사진 ${totalPhotos}장\n\n`;
-  if (photoFolderHandle) {
-    msg += hasChanges
-      ? `저장 후 새 작업을 시작합니다. (백그라운드에서 저장됩니다)\n\n계속할까요?`
-      : `(이미 저장됨) 새 작업을 시작합니다.\n계속할까요?`;
+  // 확인 메시지 (1.240: 변경사항 있으면 3-way 선택)
+  let _skipBackgroundSave = false;
+  if (photoFolderHandle && hasChanges) {
+    // 변경 있음 - 3-way: 1) 저장 후 새작업  2) 저장 없이 새작업  3) 취소
+    // confirm은 2-way라 두 단계로 분리:
+    //   1단계: 저장할까? (예/아니오)
+    //   2단계: 그래서 새작업 시작할까? (예/아니오) - 마지막 회피 기회
+    const wantSave = confirm(
+      `📋 현재 작업: 호수 ${units.length}개, 사진 ${totalPhotos}장\n\n` +
+      `💾 저장 안 된 변경사항이 있어요.\n\n` +
+      `확인 → 저장 후 진행\n` +
+      `취소 → 저장 안 함`
+    );
+    // 새작업 진행 여부 마지막 확인
+    if (!confirm(wantSave ? '🆕 새 작업을 시작할까요?\n(현재 작업은 저장됩니다)' : '🆕 새 작업을 시작할까요?\n(저장 안 됨 - 변경 버림)')) return;
+    _skipBackgroundSave = !wantSave;
   } else {
-    msg += `⚠️ 저장 폴더가 없어 사진은 저장되지 않습니다.\n새 작업을 시작할까요?`;
+    // 변경 없음 또는 폴더 없음 - 단순 확인
+    const msg = photoFolderHandle
+      ? `📋 현재 작업: 호수 ${units.length}개, 사진 ${totalPhotos}장\n\n(이미 저장됨) 새 작업을 시작할까요?`
+      : `📋 현재 작업: 호수 ${units.length}개, 사진 ${totalPhotos}장\n\n⚠️ 저장 폴더가 없어 사진은 저장되지 않습니다.\n새 작업을 시작할까요?`;
+    if (!confirm(msg)) return;
+    _skipBackgroundSave = true;  // 변경 없으니 백그라운드 저장 스킵
   }
-
-  if (!confirm(msg)) return;
 
   // ★★★ 핵심: 이전 상태 캡처 후 즉시 UI 초기화
   const prevUnits = units;
@@ -1155,13 +1555,17 @@ async function newWork() {
   updateStats();
   showToast('🆕 새 작업', 'ok');
 
-  // ★ 백그라운드 저장 (UI 차단 없음)
-  if (photoFolderHandle && prevDirty) {
-    _saveInBackground(prevUnits, prevWorkId, prevFolderName, prevWorkType, prevFacilityCustomer, prevApt, prevDate, prevWorker);
-  }
+  // ★ 빈 세션 강제 저장 (백그라운드 저장 시작 전에!) - force로 가드 우회
+  //   - 백그라운드 저장이 시작되면 _isSavingInBackground=true 되어 일반 sessionAutoSaveNow는 차단됨
+  //   - 빈 세션을 IndexedDB/localStorage에 박아두면 이후 무슨 일이 있어도 빈 상태로 복원
+  try { await sessionAutoSaveNow({ force: true }); } catch(e) {}
 
-  // IndexedDB 자동저장 (새 빈 상태로)
-  try { await sessionAutoSaveNow(); } catch(e) {}
+  // ★ 백그라운드 저장 (UI 차단 없음) - 사용자가 저장 선택했고 변경 있을 때만
+  if (photoFolderHandle && prevDirty && !_skipBackgroundSave) {
+    _saveInBackground(prevUnits, prevWorkId, prevFolderName, prevWorkType, prevFacilityCustomer, prevApt, prevDate, prevWorker);
+  } else if (_skipBackgroundSave && prevDirty) {
+    console.log('[새작업] 사용자가 저장 안 함 선택 → 백그라운드 저장 스킵');
+  }
 }
 
 // 백그라운드 저장 중 플래그 (전역 노출 - customers.js에서 접근)
@@ -1222,6 +1626,11 @@ async function _saveInBackground(prevUnits, prevWorkId, prevFolderName, prevWork
     if (dateEl)   dateEl.value   = savedDate;
     if (workerEl) workerEl.value = savedWorker;
     _isSavingInBackground = false;
+
+    // ★ 백그라운드 저장 끝난 후 즉시 현재(빈) 상태를 세션에 강제 저장 (1.234)
+    //   - 새작업 직후 앱 종료해도 빈 상태가 복원되도록 보장
+    //   - force: true로 가드 우회 (백그라운드 직후라 가드는 풀렸지만 안전을 위해)
+    try { await sessionAutoSaveNow({ force: true }); } catch(e) {}
   }
 }
 

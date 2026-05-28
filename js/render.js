@@ -145,6 +145,28 @@ function renderAll() {
           ${spHtml}
           <button class="add-sp-btn" data-uid="${u.id}">＋ 특이사항 추가</button>
         </div>
+        ${(u._trash && u._trash.length > 0) ? `
+        <div class="trash-sec">
+          <div class="trash-hdr" data-uid="${u.id}">
+            <span>🗑️ 삭제된 사진 (${u._trash.length}장)</span>
+            <span class="trash-arrow">${u._trashOpen ? '▼' : '▶'}</span>
+          </div>
+          <div class="trash-content" style="${u._trashOpen ? '' : 'display:none;'}">
+            <div class="trash-actions">
+              <button class="trash-restore-all" data-uid="${u.id}">↩️ 전체 복원</button>
+              <button class="trash-empty" data-uid="${u.id}">🗑️ 비우기</button>
+            </div>
+            <div class="trash-thumbs">
+              ${u._trash.map((p, ti) => `
+                <div class="trash-thumb">
+                  <img src="${p.dataUrl || p.thumb || ''}" data-photo-id="${p.id || ''}" alt="삭제된 사진">
+                  <span class="trash-thumb-type">${p._trashType === 'before' ? '전' : '후'}</span>
+                  <button class="trash-restore-one" data-uid="${u.id}" data-tidx="${ti}" title="복원">↩️</button>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>` : ''}
         ${currentWorkType === 'facility' ? '' : `
         <div class="cust-sec">
           <div class="cust-toggle" data-uid="${u.id}">
@@ -156,8 +178,7 @@ function renderAll() {
           </div>
           <div class="cust-content" style="${u.customerOpen ? '' : 'display:none;'}">
             <div class="cust-hdr">
-              <span style="font-size:11px;color:var(--mu);">변경 후 💾 버튼을 눌러주세요</span>
-              <button class="cust-save-btn ${(u.customer?.phone||'').replace(/[^\d]/g,'').length<9?'disabled':''}" data-uid="${u.id}" ${(u.customer?.phone||'').replace(/[^\d]/g,'').length<9?'disabled':''}>💾 저장</button>
+              <span style="font-size:11px;color:var(--mu);">💡 메인 💾저장 시 함께 저장됩니다</span>
             </div>
             <div class="cust-save-status" data-uid="${u.id}">${(u.customer?.phone||'').trim() ? '' : '<span style="color:var(--mu);">전화번호를 입력하세요</span>'}</div>
 
